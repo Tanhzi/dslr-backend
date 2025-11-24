@@ -5,7 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Media;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Mail;
+use App\Services\BrevoMailService;
+use GuzzleHttp\Client;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\File;
 
@@ -183,7 +184,9 @@ public function sendQrEmail(Request $request)
         ], 500);
     }
 
-    // ✅ SỬA TỪ ĐÂY TRỞ XUỐNG
+    // Đọc file QR dưới dạng base64
+    $qrBase64 = base64_encode(file_get_contents($qrFilePath));
+
     $html = "
         <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f9f9f9; border-radius: 10px;'>
             <h2 style='color: #e91e63; text-align: center;'>✨ Ảnh của bạn đã sẵn sàng!</h2>
@@ -203,19 +206,47 @@ public function sendQrEmail(Request $request)
         </div>
     ";
 
-    Mail::html($html, function ($message) use ($email, $qrFilePath) {
-        $message->to($email)
-                ->subject('📸 Ảnh của bạn đã sẵn sàng để tải về!')
-                ->attach($qrFilePath, [
-                    'as' => 'qr-tai-anh.png',
-                    'mime' => 'image/png',
-                ]);
-    });
-
-    return response()->json([
-        'status' => 'success',
-        'message' => "Đã gửi email chứa QR và link tải ảnh đến {$email}"
+    // Gửi qua Brevo API
+    $client = new Client([
+        'base_uri' => 'https://api.brevo.com/v3/',
+        'headers' => [
+            'Accept' => 'application/json',
+            'Content-Type' => 'application/json',
+            'Api-Key' => config('services.brevo.api_key'),
+        ],
     ]);
+
+    try {
+        $response = $client->post('smtp/email', [
+            'json' => [
+                'sender' => [
+                    'name' => 'SweetLens',
+                    'email' => 'sweetlensp@gmail.com',
+                ],
+                'to' => [['email' => $email]],
+                'subject' => '📸 Ảnh của bạn đã sẵn sàng để tải về!',
+                'htmlContent' => $html,
+                'attachment' => [
+                    [
+                        'name' => 'qr-tai-anh.png',
+                        'content' => $qrBase64,
+                    ],
+                ],
+            ],
+        ]);
+
+        if ($response->getStatusCode() === 201) {
+            return response()->json([
+                'status' => 'success',
+                'message' => "Đã gửi email chứa QR và link tải ảnh đến {$email}"
+            ]);
+        }
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Gửi email thất bại: ' . $e->getMessage()
+        ], 500);
+    }
 }
 public function sendOriginalImagesEmail(Request $request)
 {
@@ -223,46 +254,35 @@ public function sendOriginalImagesEmail(Request $request)
         'email' => 'required|email',
         'session_id' => 'required|string',
         'images' => 'required|array|min:1',
-        'images.*' => 'string', // base64 strings
+        'images.*' => 'string',
     ]);
 
     $email = $request->email;
     $sessionId = $request->session_id;
     $imagesBase64 = $request->images;
 
-    // Thư mục tạm để lưu ảnh gốc (sẽ xóa sau khi gửi email)
-    $tempDir = storage_path('app/temp/' . $sessionId);
-    if (!File::exists($tempDir)) {
-        File::makeDirectory($tempDir, 0755, true);
-    }
-
-    $attachedFiles = [];
-
+    $attachments = [];
     foreach ($imagesBase64 as $index => $base64) {
-        if (!preg_match('/^data:image\/(\w+);base64,/', $base64, $matches)) {
-            continue; // skip invalid
-        }
-
+        if (!preg_match('/^image\/(\w+);base64,/', $base64, $matches)) continue;
         $extension = strtolower($matches[1]);
         $data = substr($base64, strpos($base64, ',') + 1);
         $decoded = base64_decode($data);
-
         if ($decoded === false) continue;
 
         $filename = "image_{$index}.{$extension}";
-        $path = $tempDir . '/' . $filename;
-        file_put_contents($path, $decoded);
-        $attachedFiles[] = $path;
+        $attachments[] = [
+            'name' => $filename,
+            'content' => base64_encode($decoded),
+        ];
     }
 
-    if (empty($attachedFiles)) {
+    if (empty($attachments)) {
         return response()->json(['error' => 'Không có ảnh hợp lệ để gửi.'], 400);
     }
 
-    // Gửi email
     $html = "
         <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f9f9f9; border-radius: 10px;'>
-            <h2 style='color: #e91e63; text-align: center;'>✨ Ảnh của bạn đã sẵn sàng!</h2>
+            <h2 style='color: #e91e63; text-align: center;'>✨ Ảnh gốc của bạn!</h2>
             <p>Xin chào,</p>
             <p>Cảm ơn bạn đã sử dụng dịch vụ! Dưới đây là ảnh gốc bạn yêu cầu (không được lưu trên hệ thống).</p>
             <p>Chúc bạn một ngày tuyệt vời! ❤️</p>
@@ -271,27 +291,37 @@ public function sendOriginalImagesEmail(Request $request)
         </div>
     ";
 
+    $client = new Client([
+        'base_uri' => 'https://api.brevo.com/v3/',
+        'headers' => [
+            'Accept' => 'application/json',
+            'Content-Type' => 'application/json',
+            'Api-Key' => config('services.brevo.api_key'),
+        ],
+    ]);
+
     try {
-        Mail::html($html, function ($message) use ($email, $attachedFiles) {
-            $message->to($email)
-                    ->subject('📸 Ảnh gốc của bạn (không lưu trên web)')
-                    ->bcc('sweetlensp@gmail.com'); // optional: gửi bản sao cho bạn
-
-            foreach ($attachedFiles as $file) {
-                $message->attach($file);
-            }
-        });
-
-        // Xóa thư mục tạm sau khi gửi
-        File::deleteDirectory($tempDir);
-
-        return response()->json([
-            'status' => 'success',
-            'message' => "Đã gửi ảnh gốc đến {$email} và không lưu lên web."
+        $response = $client->post('smtp/email', [
+            'json' => [
+                'sender' => [
+                    'name' => 'SweetLens',
+                    'email' => 'sweetlensp@gmail.com',
+                ],
+                'to' => [['email' => $email]],
+                'bcc' => [['email' => 'sweetlensp@gmail.com']],
+                'subject' => '📸 Ảnh gốc của bạn (không lưu trên web)',
+                'htmlContent' => $html,
+                'attachment' => $attachments,
+            ],
         ]);
+
+        if ($response->getStatusCode() === 201) {
+            return response()->json([
+                'status' => 'success',
+                'message' => "Đã gửi ảnh gốc đến {$email} và không lưu lên web."
+            ]);
+        }
     } catch (\Exception $e) {
-        // Dọn dẹp nếu gửi thất bại
-        File::deleteDirectory($tempDir);
         return response()->json([
             'status' => 'error',
             'message' => 'Gửi email thất bại: ' . $e->getMessage()

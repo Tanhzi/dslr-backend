@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
+use App\Services\BrevoMailService;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 use Illuminate\Validation\ValidationException;
@@ -79,21 +79,22 @@ public function forgotPassword(Request $request)
         'email.exists' => 'Email này chưa được đăng ký.',
     ]);
 
-    // Tạo token ngẫu nhiên (6 chữ số)
     $token = rand(100000, 999999);
-    $expiresAt = Carbon::now()->addMinutes(10); // Hết hạn sau 10 phút
+    $expiresAt = \Carbon\Carbon::now()->addMinutes(10);
 
-    // Cập nhật vào DB
     User::where('email', $request->email)->update([
         'reset_token' => $token,
         'reset_expires_at' => $expiresAt,
     ]);
 
-    // Gửi email (sử dụng Mail facade)
-    Mail::raw("Mã xác nhận đặt lại mật khẩu của bạn là: {$token}. Mã có hiệu lực trong 10 phút.", function ($message) use ($request) {
-        $message->to($request->email)
-                ->subject('Mã đặt lại mật khẩu');
-    });
+    // Gửi email qua Brevo API
+    $mailService = new BrevoMailService();
+    $mailService->send(
+        $request->email,
+        'User',
+        'Mã đặt lại mật khẩu',
+        "Mã xác nhận đặt lại mật khẩu của bạn là: {$token}. Mã có hiệu lực trong 10 phút."
+    );
 
     return response()->json([
         'status' => 'success',

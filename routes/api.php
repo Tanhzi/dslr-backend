@@ -156,7 +156,3 @@ Route::get('/events', function (Request $request) {
 Route::post('/send-qr-email', [MediaController::class, 'sendQrEmail']);
 Route::post('/send-original-images-email', [MediaController::class, 'sendOriginalImagesEmail']);
 
-
-Route::get('/hello', function () {
-    return response()->json(['message' => 'Laravel API is running!'], 200);
-});
