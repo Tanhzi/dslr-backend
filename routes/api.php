@@ -23,6 +23,12 @@ use App\Http\Controllers\RatingController;
 // TemplateFrame
 use App\Http\Controllers\TemplateFrameController;
 
+// Sticker
+use App\Http\Controllers\StickerController;
+
+// AI Topic
+use App\Http\Controllers\AiTopicController;
+
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
@@ -156,3 +162,19 @@ Route::get('/events', function (Request $request) {
 Route::post('/send-qr-email', [MediaController::class, 'sendQrEmail']);
 Route::post('/send-original-images-email', [MediaController::class, 'sendOriginalImagesEmail']);
 
+
+
+// ==================== QUẢN LÝ STICKER (HOÀN HẢO, KHÔNG LỖI) ====================
+Route::prefix('stickers')->group(function () {
+    Route::get('/', [StickerController::class, 'index']);                    // ?id_admin=&page=&limit=&search=&filter_type=
+    Route::post('/', [StickerController::class, 'store']);                   // Thêm nhiều file
+    Route::put('/{id}', [StickerController::class, 'update']);               // Update chuẩn REST
+    Route::delete('/{id}', [StickerController::class, 'destroy']);
+});
+
+Route::prefix('ai-topics')->group(function () {
+    Route::get('/', [AiTopicController::class, 'index']);
+    Route::post('/', [AiTopicController::class, 'store']);
+    Route::match(['put', 'patch'], '/{id}', [AiTopicController::class, 'update']);
+    Route::delete('/{id}', [AiTopicController::class, 'destroy']);
+});

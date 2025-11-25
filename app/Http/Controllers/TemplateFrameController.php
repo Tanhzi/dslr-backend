@@ -9,75 +9,76 @@ use Illuminate\Support\Facades\Validator;
 
 class TemplateFrameController extends Controller
 {
-public function index(Request $request)
-{
-    $id_admin = $request->query('id_admin');
-    $id_topic = $request->query('id_topic');
-    $cuts = $request->query('cuts');
+    public function index(Request $request)
+    {
+        $id_admin = $request->query('id_admin');
+        $page = $request->query('page', 1);
+        $limit = $request->query('limit', 10);
+        $search = $request->query('search');
+        $cuts = $request->query('cuts');
 
-    // Kiểm tra bắt buộc: id_admin, id_topic, cuts
-    if (!$id_admin || !$id_topic || !$cuts) {
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Thiếu tham số bắt buộc: id_admin, id_topic hoặc cuts'
-        ], 400);
-    }
-
-    $page = $request->query('page', 1);
-    $limit = $request->query('limit', 10);
-    $search = $request->query('search');
-
-    $offset = ($page - 1) * $limit;
-
-    $query = DB::table('template')
-        ->leftJoin('event', 'template.id_topic', '=', 'event.id')
-        ->where('template.id_admin', $id_admin)
-        ->where('template.id_topic', $id_topic)
-        ->where('template.cuts', $cuts)
-        ->select('template.id', 'template.frame', 'template.type', 'template.cuts', 'template.id_topic', 'event.name as event_name');
-
-    if ($search) {
-        $query->where(function ($q) use ($search) {
-            $q->where('template.type', 'like', "%{$search}%")
-              ->orWhere('event.name', 'like', "%{$search}%");
-        });
-    }
-
-    $total = $query->count();
-    $frames = $query->orderBy('template.id', 'desc')
-        ->offset($offset)
-        ->limit($limit)
-        ->get();
-
-    $frames = $frames->map(function ($item) {
-        $base64 = null;
-
-        // Chỉ xử lý file từ storage (loại bỏ hoàn toàn logic BLOB cũ)
-        if ($item->frame && strlen($item->frame) < 200) {
-            $path = storage_path('app/public/frames/' . $item->frame);
-            if (file_exists($path)) {
-                $base64 = base64_encode(file_get_contents($path));
-            }
+        if (!$id_admin) {
+            return response()->json(['status' => 'error', 'message' => 'Thiếu id_admin'], 400);
         }
 
-        return [
-            'id' => $item->id,
-            'frame' => $base64 ? 'data:image/png;base64,' . $base64 : null,
-            'type' => $item->type ?? '',
-            'cuts' => $item->cuts ?? '',
-            'id_topic' => $item->id_topic,
-            'event_name' => $item->event_name ?? 'Chưa có sự kiện',
-        ];
-    });
+        $offset = ($page - 1) * $limit;
 
-    return response()->json([
-        'status' => 'success',
-        'data' => $frames,
-        'total_pages' => ceil($total / $limit),
-        'current_page' => (int)$page,
-        'total' => $total
-    ]);
-}
+        $query = DB::table('template')
+            ->leftJoin('event', 'template.id_topic', '=', 'event.id')
+            ->where('template.id_admin', $id_admin)
+            ->select('template.id', 'template.frame', 'template.type', 'template.cuts', 'template.id_topic', 'event.name as event_name');
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('template.type', 'like', "%{$search}%")
+                  ->orWhere('event.name', 'like', "%{$search}%");
+            });
+        }
+
+        if ($cuts && $cuts !== 'all') {
+            $query->where('template.cuts', $cuts);
+        }
+
+        $total = $query->count();
+        $frames = $query->orderBy('template.id', 'desc')
+            ->offset($offset)
+            ->limit($limit)
+            ->get();
+
+        $frames = $frames->map(function ($item) {
+            $base64 = null;
+
+            // Ưu tiên file trong storage (khung mới)
+            if ($item->frame && strlen($item->frame) < 200) {
+                $path = storage_path('app/public/frames/' . $item->frame);
+                if (file_exists($path)) {
+                    $base64 = base64_encode(file_get_contents($path));
+                }
+            }
+
+            // Nếu không → là BLOB (khung cũ)
+            if (!$base64 && !empty($item->frame)) {
+                $base64 = base64_encode($item->frame);
+            }
+
+            return [
+                'id' => $item->id,
+                'frame' => $base64 ? 'data:image/png;base64,' . $base64 : null,
+                'type' => $item->type ?? '',
+                'cuts' => $item->cuts ?? '',
+                'id_topic' => $item->id_topic,
+                'event_name' => $item->event_name ?? 'Chưa có sự kiện',
+            ];
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $frames,
+            'total_pages' => ceil($total / $limit),
+            'current_page' => (int)$page,
+            'total' => $total
+        ]);
+    }
 
     // === THÊM NHIỀU KHUNG - ĐÃ SỬA LỖI store() on array ===
     public function store(Request $request)

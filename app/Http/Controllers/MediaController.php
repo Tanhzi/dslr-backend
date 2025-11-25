@@ -250,11 +250,14 @@ public function sendQrEmail(Request $request)
 }
 public function sendOriginalImagesEmail(Request $request)
 {
-    $request->validate([
+    $validated = $request->validate([
         'email' => 'required|email',
         'session_id' => 'required|string',
         'images' => 'required|array|min:1',
         'images.*' => 'string',
+    ], [
+        'images.required' => 'Vui lòng chọn ít nhất một ảnh để gửi.',
+        'images.*.string' => 'Ảnh không hợp lệ (phải là data URL).',
     ]);
 
     $email = $request->email;
@@ -263,7 +266,10 @@ public function sendOriginalImagesEmail(Request $request)
 
     $attachments = [];
     foreach ($imagesBase64 as $index => $base64) {
-        if (!preg_match('/^image\/(\w+);base64,/', $base64, $matches)) continue;
+        // ✅ Kiểm tra định dạng data URL: data:image/xxx;base64,...
+        if (!preg_match('/^data:image\/(\w+);base64,/', $base64, $matches)) {
+            continue;
+        }
         $extension = strtolower($matches[1]);
         $data = substr($base64, strpos($base64, ',') + 1);
         $decoded = base64_decode($data);
@@ -277,7 +283,10 @@ public function sendOriginalImagesEmail(Request $request)
     }
 
     if (empty($attachments)) {
-        return response()->json(['error' => 'Không có ảnh hợp lệ để gửi.'], 400);
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Không có ảnh hợp lệ để gửi (định dạng data URL sai).'
+        ], 400);
     }
 
     $html = "
