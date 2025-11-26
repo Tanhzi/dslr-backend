@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Event;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class EventController extends Controller
 {
@@ -17,7 +19,7 @@ class EventController extends Controller
         }
 
         $events = Event::where('id_admin', $id_admin)
-            ->select('id', 'name', 'date', 'apply', 'ev_back', 'ev_logo', 'ev_note')
+            ->select('id', 'name', 'date', 'apply', 'ev_back', 'ev_logo', 'ev_note', 'background', 'logo')
             ->get()
             ->map(function ($event) {
                 return [
@@ -28,6 +30,8 @@ class EventController extends Controller
                     'ev_back' => (int) $event->ev_back,
                     'ev_logo' => (int) $event->ev_logo,
                     'ev_note' => (int) $event->ev_note,
+                    'background' => $event->background ? Storage::url($event->background) : null,
+                    'logo' => $event->logo ? Storage::url($event->logo) : null,
                 ];
             });
 
@@ -79,6 +83,7 @@ class EventController extends Controller
                 'date' => $request->date,
                 'apply' => $request->apply,
                 'id_admin' => $id_admin,
+                // background, logo để null khi tạo mới
             ]);
 
             if (!empty($request->apply)) {
@@ -100,7 +105,8 @@ class EventController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống: ' . $e->getMessage()], 500);
+            Log::error("Lỗi tạo event: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống'], 500);
         }
     }
 
@@ -150,7 +156,8 @@ class EventController extends Controller
             return response()->json(['status' => 'success', 'message' => 'Cập nhật dữ liệu thành công']);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống: ' . $e->getMessage()], 500);
+            Log::error("Lỗi cập nhật event $id: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống'], 500);
         }
     }
 
@@ -162,15 +169,25 @@ class EventController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Thiếu tham số: id_admin'], 400);
         }
 
-        $deleted = Event::where('id', $id)
+        $event = Event::where('id', $id)
             ->where('id_admin', $id_admin)
-            ->delete();
+            ->first();
 
-        if ($deleted) {
-            return response()->json(['status' => 'success', 'message' => 'Xóa event thành công']);
-        } else {
+        if (!$event) {
             return response()->json(['status' => 'error', 'message' => 'Không tìm thấy event để xóa'], 404);
         }
+
+        // Xóa file ảnh (nếu có)
+        if (!empty($event->background)) {
+            Storage::disk('public')->delete($event->background);
+        }
+        if (!empty($event->logo)) {
+            Storage::disk('public')->delete($event->logo);
+        }
+
+        $event->delete();
+
+        return response()->json(['status' => 'success', 'message' => 'Xóa event thành công']);
     }
 
     // POST /api/events/{id}/note
@@ -214,35 +231,39 @@ class EventController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Thiếu tham số: id_admin'], 400);
         }
 
-        if (!$request->hasFile('logo')) {
-            return response()->json(['status' => 'error', 'message' => 'Chưa tải lên file logo'], 400);
+        $request->validate([
+            'logo' => 'required|image|mimes:png,jpg,jpeg,gif|max:8192',
+            'apply' => 'required|in:home,cancel',
+        ]);
+
+        $event = Event::where('id', $id)
+            ->where('id_admin', $id_admin)
+            ->first();
+
+        if (!$event) {
+            return response()->json(['status' => 'error', 'message' => 'Không tìm thấy event'], 404);
         }
 
         $file = $request->file('logo');
-        if (!$file->isValid()) {
-            return response()->json(['status' => 'error', 'message' => 'File logo không hợp lệ'], 400);
-        }
+        try {
+            if (!empty($event->logo)) {
+                Storage::disk('public')->delete($event->logo);
+            }
 
-        $allowedTypes = ['jpg', 'jpeg', 'png', 'gif'];
-        if (!in_array($file->getClientOriginalExtension(), $allowedTypes)) {
-            return response()->json(['status' => 'error', 'message' => 'Chỉ cho phép file JPG, JPEG, PNG, GIF'], 400);
-        }
+            $filename = uniqid('logo_', true) . '.' . $file->getClientOriginalExtension();
+            $path = $file->storeAs('logos', $filename, 'public');
 
-        $apply = $request->input('apply');
-        $ev_logo = $apply === 'home' ? 1 : 0;
-        $fileData = file_get_contents($file->getRealPath());
+            $ev_logo = $request->apply === 'home' ? 1 : 0;
 
-        $updated = Event::where('id', $id)
-            ->where('id_admin', $id_admin)
-            ->update([
-                'logo' => $fileData,
+            $event->update([
+                'logo' => $path,
                 'ev_logo' => $ev_logo,
             ]);
 
-        if ($updated) {
             return response()->json(['status' => 'success', 'message' => 'Cập nhật logo thành công!']);
-        } else {
-            return response()->json(['status' => 'error', 'message' => 'Không tìm thấy event'], 404);
+        } catch (\Exception $e) {
+            Log::error("Lỗi lưu logo cho event $id: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống khi lưu logo'], 500);
         }
     }
 
@@ -254,44 +275,47 @@ class EventController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Thiếu tham số: id_admin'], 400);
         }
 
-        if (!$request->hasFile('background')) {
-            return response()->json(['status' => 'error', 'message' => 'Chưa tải lên file ảnh'], 400);
+        $request->validate([
+            'background' => 'required|image|mimes:png,jpg,jpeg,gif|max:8192',
+            'apply' => 'required|in:home,all-pages',
+        ]);
+
+        $event = Event::where('id', $id)
+            ->where('id_admin', $id_admin)
+            ->first();
+
+        if (!$event) {
+            return response()->json(['status' => 'error', 'message' => 'Không tìm thấy event'], 404);
         }
 
         $file = $request->file('background');
-        if (!$file->isValid()) {
-            return response()->json(['status' => 'error', 'message' => 'File không hợp lệ'], 400);
-        }
+        try {
+            if (!empty($event->background)) {
+                Storage::disk('public')->delete($event->background);
+            }
 
-        $allowedTypes = ['jpg', 'jpeg', 'png', 'gif'];
-        if (!in_array($file->getClientOriginalExtension(), $allowedTypes)) {
-            return response()->json(['status' => 'error', 'message' => 'Chỉ cho phép file JPG, JPEG, PNG, GIF'], 400);
-        }
+            $filename = uniqid('bg_', true) . '.' . $file->getClientOriginalExtension();
+            $path = $file->storeAs('backgrounds', $filename, 'public');
 
-        $apply = $request->input('apply');
-        $ev_back = match ($apply) {
-            'home' => 1,
-            'all-pages' => 2,
-            default => 0,
-        };
+            $ev_back = match ($request->apply) {
+                'home' => 1,
+                'all-pages' => 2,
+                default => 0,
+            };
 
-        $fileData = file_get_contents($file->getRealPath());
-
-        $updated = Event::where('id', $id)
-            ->where('id_admin', $id_admin)
-            ->update([
-                'background' => $fileData,
+            $event->update([
+                'background' => $path,
                 'ev_back' => $ev_back,
             ]);
 
-        if ($updated) {
             return response()->json(['status' => 'success', 'message' => 'Cập nhật ảnh nền thành công!']);
-        } else {
-            return response()->json(['status' => 'error', 'message' => 'Không tìm thấy event'], 404);
+        } catch (\Exception $e) {
+            Log::error("Lỗi lưu background cho event $id: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống khi lưu ảnh nền'], 500);
         }
     }
 
-    // (Optional) GET /api/events/{id} → chi tiết event (đã có trong code bạn)
+    // GET /api/events/{id} → chi tiết event
     public function show(Request $request)
     {
         $request->validate([
@@ -311,14 +335,14 @@ class EventController extends Controller
         }
 
         return response()->json([
-            'id' => $event->id,
-            'name' => $event->name,
-            'date' => $event->date,
+            'id' => (int) $event->id,
+            'name' => (string) $event->name,
+            'date' => (string) $event->date,
             'ev_back' => (int) $event->ev_back,
             'ev_logo' => (int) $event->ev_logo,
             'ev_note' => (int) $event->ev_note,
-            'background' => $event->background ? base64_encode($event->background) : null,
-            'logo' => $event->logo ? base64_encode($event->logo) : null,
+            'background' => $event->background ? Storage::url($event->background) : null,
+            'logo' => $event->logo ? Storage::url($event->logo) : null,
             'notes' => $event->note1 || $event->note2 || $event->note3
                 ? ['note1' => $event->note1, 'note2' => $event->note2, 'note3' => $event->note3]
                 : null,

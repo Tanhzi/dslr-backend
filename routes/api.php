@@ -1,6 +1,8 @@
 <?php
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\EventController;
@@ -162,6 +164,28 @@ Route::get('/events', function (Request $request) {
 Route::post('/send-qr-email', [MediaController::class, 'sendQrEmail']);
 Route::post('/send-original-images-email', [MediaController::class, 'sendOriginalImagesEmail']);
 
+//ảnh frame
+Route::get('/frame-image-client/{filename}', function (string $filename) {
+    // Validate filename to prevent directory traversal
+    if (preg_match('/^[a-zA-Z0-9._-]+\.png$/i', $filename) === 0) {
+        abort(400, 'Invalid filename');
+    }
+
+    $path = 'frames/' . $filename;
+
+    if (!Storage::disk('public')->exists($path)) {
+        abort(404);
+    }
+
+    $file = Storage::disk('public')->get($path);
+    $mimeType = Storage::disk('public')->mimeType($path);
+
+    return Response::make($file, 200)
+        ->header('Content-Type', $mimeType)
+        ->header('Access-Control-Allow-Origin', 'http://localhost:5173')
+        ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        ->header('Access-Control-Allow-Headers', 'Content-Type');
+})->name('frame.image');
 
 
 // ==================== QUẢN LÝ STICKER (HOÀN HẢO, KHÔNG LỖI) ====================

@@ -5,10 +5,13 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 
 class TemplateFrameController extends Controller
 {
+    /**
+     * Hiển thị danh sách khung ảnh
+     */
     public function index(Request $request)
     {
         $id_admin = $request->query('id_admin');
@@ -23,13 +26,14 @@ class TemplateFrameController extends Controller
 
         $offset = ($page - 1) * $limit;
 
+        // LƯU Ý: select 'template.frame' (không phải frame_path)
         $query = DB::table('template')
             ->leftJoin('event', 'template.id_topic', '=', 'event.id')
             ->where('template.id_admin', $id_admin)
             ->select('template.id', 'template.frame', 'template.type', 'template.cuts', 'template.id_topic', 'event.name as event_name');
 
         if ($search) {
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('template.type', 'like', "%{$search}%")
                   ->orWhere('event.name', 'like', "%{$search}%");
             });
@@ -45,28 +49,18 @@ class TemplateFrameController extends Controller
             ->limit($limit)
             ->get();
 
+        // Chuyển đường dẫn thành URL công khai
         $frames = $frames->map(function ($item) {
-            $base64 = null;
-
-            // Ưu tiên file trong storage (khung mới)
-            if ($item->frame && strlen($item->frame) < 200) {
-                $path = storage_path('app/public/frames/' . $item->frame);
-                if (file_exists($path)) {
-                    $base64 = base64_encode(file_get_contents($path));
-                }
-            }
-
-            // Nếu không → là BLOB (khung cũ)
-            if (!$base64 && !empty($item->frame)) {
-                $base64 = base64_encode($item->frame);
-            }
+            $fullUrl = $item->frame 
+                ? Storage::url($item->frame) 
+                : null;
 
             return [
-                'id' => $item->id,
-                'frame' => $base64 ? 'data:image/png;base64,' . $base64 : null,
+                'id' => (int) $item->id,
+                'frame' => 'http://localhost:8000' . $fullUrl, 
                 'type' => $item->type ?? '',
-                'cuts' => $item->cuts ?? '',
-                'id_topic' => $item->id_topic,
+                'cuts' => $item->cuts ? (string) $item->cuts : '',
+                'id_topic' => $item->id_topic ? (int) $item->id_topic : null,
                 'event_name' => $item->event_name ?? 'Chưa có sự kiện',
             ];
         });
@@ -75,12 +69,14 @@ class TemplateFrameController extends Controller
             'status' => 'success',
             'data' => $frames,
             'total_pages' => ceil($total / $limit),
-            'current_page' => (int)$page,
+            'current_page' => (int) $page,
             'total' => $total
         ]);
     }
 
-    // === THÊM NHIỀU KHUNG - ĐÃ SỬA LỖI store() on array ===
+    /**
+     * Thêm nhiều khung ảnh
+     */
     public function store(Request $request)
     {
         $request->validate([
@@ -89,157 +85,141 @@ class TemplateFrameController extends Controller
             'frames.*.id_topic' => 'required|exists:event,id',
             'frames.*.type' => 'required|string|max:100',
             'frames.*.cuts' => 'required|in:3,41,42,6',
-            'frames.*.frame' => 'required|file|image|mimes:png,jpg,jpeg|max:8048',
+            'frames.*.frame' => 'required|image|mimes:png,jpg,jpeg|max:8192',
         ]);
 
         $successCount = 0;
-        $failedCount = 0;
-        $results = [];
-
-        // LẤY DỮ LIỆU TỪ frames[index][field]
         $framesData = $request->input('frames', []);
-        $files = $request->file('frames'); // Đây là mảng file: frames[0][frame], frames[1][frame]...
+        $files = $request->file('frames');
 
         foreach ($framesData as $index => $data) {
-            if (!isset($files[$index]['frame'])) continue;
+            if (!isset($files[$index]['frame'])) {
+                Log::warning("Thiếu file ở index $index khi thêm khung");
+                continue;
+            }
 
-            $file = $files[$index]['frame'];
+            $uploadedFile = $files[$index]['frame'];
+            if (!$uploadedFile->isValid()) {
+                Log::warning("File không hợp lệ ở index $index: " . $uploadedFile->getErrorMessage());
+                continue;
+            }
+
             try {
-                $path = $file->store('frames', 'public');
-                $filename = basename($path);
+                // Tạo tên file duy nhất
+                $filename = uniqid('frame_', true) . '.' . $uploadedFile->getClientOriginalExtension();
+                // Lưu vào storage/app/public/frames/
+                $path = $uploadedFile->storeAs('frames', $filename, 'public');
 
-                $id = DB::table('template')->insertGetId([
+                DB::table('template')->insert([
                     'id_admin' => $request->id_admin,
                     'id_topic' => $data['id_topic'],
-                    'frame' => $filename,
+                    'frame' => $path, // ← lưu vào cột `frame` (VARCHAR)
                     'type' => $data['type'],
                     'cuts' => $data['cuts']
                 ]);
 
                 $successCount++;
-                $results[] = ['id' => $id, 'status' => 'success'];
             } catch (\Exception $e) {
-                $failedCount++;
-                $results[] = ['status' => 'error', 'message' => $e->getMessage()];
+                Log::error("Lỗi lưu khung ở index $index: " . $e->getMessage());
+                continue;
             }
+        }
+
+        if ($successCount === 0) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Không có khung nào được thêm thành công!'
+            ], 400);
         }
 
         return response()->json([
             'status' => 'success',
-            'message' => "Thêm thành công $successCount khung, thất bại $failedCount",
-            'data' => $results
+            'message' => "Thêm thành công $successCount khung ảnh!",
         ], 201);
     }
 
-    // === CHỈNH SỬA - ĐÃ SỬA HOÀN TOÀN ===
+    /**
+     * Cập nhật khung ảnh
+     */
     public function update(Request $request, $id)
     {
-        // Kiểm tra khung có tồn tại không
-        $frame = DB::table('template')->where('id', $id)->first();
-        if (!$frame) {
-            return response()->json([
-                'status' => 'error', 
-                'message' => 'Không tìm thấy khung ảnh'
-            ], 404);
+        $frameRecord = DB::table('template')->where('id', $id)->first();
+        if (!$frameRecord) {
+            return response()->json(['status' => 'error', 'message' => 'Không tìm thấy khung ảnh'], 404);
         }
 
-        // Validation linh hoạt - chỉ validate những trường được gửi lên
-        $rules = [];
-        
-        if ($request->has('id_topic')) {
-            $rules['id_topic'] = 'required|integer|exists:event,id';
-        }
-        
-        if ($request->has('type')) {
-            $rules['type'] = 'required|string|max:100';
-        }
-        
-        if ($request->has('cuts')) {
-            $rules['cuts'] = 'required|in:3,41,42,6';
-        }
-        
-        if ($request->hasFile('frame')) {
-            $rules['frame'] = 'required|image|mimes:png,jpg,jpeg|max:8048';
-        }
-
-        // Nếu không có gì để update
-        if (empty($rules)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Không có dữ liệu để cập nhật'
-            ], 400);
-        }
-
-        // Validate
-        $validator = Validator::make($request->all(), $rules);
-        
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Dữ liệu không hợp lệ',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        // Chuẩn bị dữ liệu update
         $data = [];
 
         if ($request->has('id_topic')) {
+            $request->validate(['id_topic' => 'required|integer|exists:event,id']);
             $data['id_topic'] = $request->id_topic;
         }
 
         if ($request->has('type')) {
+            $request->validate(['type' => 'required|string|max:100']);
             $data['type'] = $request->type;
         }
 
         if ($request->has('cuts')) {
+            $request->validate(['cuts' => 'required|in:3,41,42,6']);
             $data['cuts'] = $request->cuts;
         }
 
-        // Xử lý file ảnh mới
         if ($request->hasFile('frame')) {
-            // Xóa file cũ nếu có (chỉ xóa file trong storage, không xóa BLOB)
-            if ($frame->frame && strlen($frame->frame) < 200) {
-                $oldPath = 'frames/' . $frame->frame;
-                if (Storage::disk('public')->exists($oldPath)) {
-                    Storage::disk('public')->delete($oldPath);
+            $request->validate(['frame' => 'required|image|mimes:png,jpg,jpeg|max:8192']);
+            $uploadedFile = $request->file('frame');
+
+            if ($uploadedFile->isValid()) {
+                try {
+                    // Xóa file cũ nếu có
+                    if (!empty($frameRecord->frame)) {
+                        Storage::disk('public')->delete($frameRecord->frame);
+                    }
+
+                    $filename = uniqid('frame_upd_', true) . '.' . $uploadedFile->getClientOriginalExtension();
+                    $path = $uploadedFile->storeAs('frames', $filename, 'public');
+                    $data['frame'] = $path; // ← lưu vào cột `frame`
+                } catch (\Exception $e) {
+                    Log::error("Lỗi cập nhật ảnh khung $id: " . $e->getMessage());
+                    return response()->json(['status' => 'error', 'message' => 'Lỗi lưu ảnh mới'], 500);
                 }
             }
-            
-            // Lưu file mới
-            $path = $request->file('frame')->store('frames', 'public');
-            $data['frame'] = basename($path);
         }
 
-        // Thực hiện update
+        if (empty($data)) {
+            return response()->json(['status' => 'error', 'message' => 'Không có dữ liệu cập nhật'], 400);
+        }
+
         try {
             DB::table('template')->where('id', $id)->update($data);
-            
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Cập nhật khung ảnh thành công',
-                'data' => $data
-            ], 200);
-            
+            return response()->json(['status' => 'success', 'message' => 'Cập nhật thành công']);
         } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Lỗi khi cập nhật: ' . $e->getMessage()
-            ], 500);
+            Log::error("Lỗi cập nhật khung $id: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Lỗi cập nhật'], 500);
         }
     }
 
+    /**
+     * Xóa khung ảnh
+     */
     public function destroy($id)
     {
-        $frame = DB::table('template')->where('id', $id)->first();
-        if (!$frame) return response()->json(['status' => 'error', 'message' => 'Không tìm thấy'], 404);
-
-        if ($frame->frame && strlen($frame->frame) < 200) {
-            Storage::disk('public')->delete('frames/' . $frame->frame);
+        $frameRecord = DB::table('template')->where('id', $id)->first();
+        if (!$frameRecord) {
+            return response()->json(['status' => 'error', 'message' => 'Không tìm thấy'], 404);
         }
 
-        DB::table('template')->where('id', $id)->delete();
+        try {
+            // Xóa file ảnh
+            if (!empty($frameRecord->frame)) {
+                Storage::disk('public')->delete($frameRecord->frame);
+            }
 
-        return response()->json(['status' => 'success', 'message' => 'Xóa thành công']);
+            DB::table('template')->where('id', $id)->delete();
+            return response()->json(['status' => 'success', 'message' => 'Xóa thành công']);
+        } catch (\Exception $e) {
+            Log::error("Lỗi xóa khung $id: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Lỗi khi xóa'], 500);
+        }
     }
 }

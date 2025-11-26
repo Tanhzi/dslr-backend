@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Pay;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 class ReportController extends Controller
 {
@@ -62,10 +63,12 @@ class ReportController extends Controller
     // Tổng doanh thu theo tháng/năm
     public function getPrice()
     {
-        $summary = Pay::selectRaw('MONTH(date) as month, YEAR(date) as year, SUM(price) as total_revenue')
-            ->groupByRaw('YEAR(date), MONTH(date)')
-            ->orderBy('year')
-            ->orderBy('month')
+        $summary = Pay::selectRaw(
+            "EXTRACT(MONTH FROM date) as month, EXTRACT(YEAR FROM date) as year, SUM(price) as total_revenue"
+        )
+            ->groupByRaw('EXTRACT(YEAR FROM date), EXTRACT(MONTH FROM date)')
+            ->orderByRaw('EXTRACT(YEAR FROM date)')
+            ->orderByRaw('EXTRACT(MONTH FROM date)')
             ->get()
             ->map(function ($item) {
                 return [

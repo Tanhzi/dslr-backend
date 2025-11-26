@@ -22,7 +22,7 @@ public function store(Request $request)
         'download_link' => 'nullable|url',
     ]);
 
-    $files = $request->input('files'); // JSON payload
+    $files = $request->input('files');
     $sessionId = $request->session_id;
     $idAdmin = $request->id_admin;
     $downloadLink = $request->download_link;
@@ -40,7 +40,7 @@ public function store(Request $request)
         $fileData = $file['data'];
         $fileType = $file['type'];
 
-        // Xử lý base64
+        // Kiểm tra base64
         if (!preg_match('/^data:image\/(\w+);base64,/', $fileData, $matches)) {
             $errors[] = "File at index $index has invalid base64 header.";
             continue;
@@ -55,24 +55,20 @@ public function store(Request $request)
             continue;
         }
 
-        // Chuẩn bị đường dẫn (cho preview)
+        // Tạo tên file
         $fileName = $sessionId . '_' . $fileType . '_' . Str::random(10) . '.' . $extension;
         $relativePath = $uploadDir . $fileName;
 
-        // Lưu file vào disk (cho tất cả loại, kể cả QR — nếu bạn vẫn muốn preview)
+        // Lưu file vào storage/app/public
         Storage::disk('public')->makeDirectory($uploadDir);
         Storage::disk('public')->put($relativePath, $decodedData);
 
-        // Xử lý QR: lưu binary vào cột `qr`, các file khác để null
-        $qrBinary = ($fileType === 'qr') ? $decodedData : null;
-
-        // Lưu vào DB
+        // 👇 KHÔNG LƯU `qr` NỮA — CHỈ LƯU THÔNG TIN CƠ BẢN
         $media = Media::create([
-            'file_path' => $relativePath,         // đường dẫn để preview
+            'file_path' => $relativePath,
             'file_type' => $fileType,
             'id_admin' => $idAdmin,
             'session_id' => $sessionId,
-            'qr' => $qrBinary,                   // 👈 BINARY DATA (BLOB)
             'link' => $downloadLink,
             'created_at' => now(),
         ]);
@@ -81,9 +77,7 @@ public function store(Request $request)
             'type' => $fileType,
             'status' => 'success',
             'path' => $relativePath,
-            'qr_stored' => ($fileType === 'qr'),
-            'link' => $downloadLink,
-            'url' => Storage::disk('public')->url($relativePath),
+            'url' => Storage::url($relativePath),
         ];
     }
 
@@ -162,12 +156,12 @@ public function sendQrEmail(Request $request)
     $email = $request->email;
     $sessionId = $request->session_id;
 
+    // 👇 Tìm QR theo file_type = 'qr'
     $qrMedia = Media::where('session_id', $sessionId)
         ->where('file_type', 'qr')
-        ->whereNotNull('file_path')
         ->first();
 
-    if (!$qrMedia) {
+    if (!$qrMedia || !Storage::disk('public')->exists($qrMedia->file_path)) {
         return response()->json([
             'status' => 'error',
             'message' => 'Không tìm thấy mã QR cho session này.'
@@ -176,15 +170,6 @@ public function sendQrEmail(Request $request)
 
     $downloadLink = $qrMedia->link ?? url("/download?session_id={$sessionId}");
     $qrFilePath = storage_path('app/public/' . $qrMedia->file_path);
-
-    if (!file_exists($qrFilePath)) {
-        return response()->json([
-            'status' => 'error',
-            'message' => 'File QR không tồn tại trên server.'
-        ], 500);
-    }
-
-    // Đọc file QR dưới dạng base64
     $qrBase64 = base64_encode(file_get_contents($qrFilePath));
 
     $html = "
@@ -206,32 +191,26 @@ public function sendQrEmail(Request $request)
         </div>
     ";
 
-    // Gửi qua Brevo API
-    $client = new Client([
-        'base_uri' => 'https://api.brevo.com/v3/',
-        'headers' => [
-            'Accept' => 'application/json',
-            'Content-Type' => 'application/json',
-            'Api-Key' => config('services.brevo.api_key'),
-        ],
-    ]);
-
     try {
+        $client = new \GuzzleHttp\Client([
+            'base_uri' => 'https://api.brevo.com/v3/',
+            'headers' => [
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
+                'Api-Key' => config('services.brevo.api_key'),
+            ],
+        ]);
+
         $response = $client->post('smtp/email', [
             'json' => [
-                'sender' => [
-                    'name' => 'SweetLens',
-                    'email' => 'sweetlensp@gmail.com',
-                ],
+                'sender' => ['name' => 'SweetLens', 'email' => 'sweetlensp@gmail.com'],
                 'to' => [['email' => $email]],
                 'subject' => '📸 Ảnh của bạn đã sẵn sàng để tải về!',
                 'htmlContent' => $html,
-                'attachment' => [
-                    [
-                        'name' => 'qr-tai-anh.png',
-                        'content' => $qrBase64,
-                    ],
-                ],
+                'attachment' => [[
+                    'name' => 'qr-tai-anh.png',
+                    'content' => $qrBase64,
+                ]],
             ],
         ]);
 
@@ -242,6 +221,7 @@ public function sendQrEmail(Request $request)
             ]);
         }
     } catch (\Exception $e) {
+        \Log::error("Gửi email QR thất bại: " . $e->getMessage());
         return response()->json([
             'status' => 'error',
             'message' => 'Gửi email thất bại: ' . $e->getMessage()

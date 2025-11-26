@@ -11,11 +11,11 @@ class Discount extends Model
 
     protected $fillable = [
         'code', 'value', 'quantity', 'count_quantity',
-        'startDate', 'endDate', 'id_admin'
+        'startdate', 'enddate', 'id_admin'
     ];
 
     protected $casts = [
-        'startDate' => 'date:Y-m-d',
-        'endDate'   => 'date:Y-m-d',
+        'startdate' => 'date:Y-m-d',
+        'enddate'   => 'date:Y-m-d',
     ];
 }

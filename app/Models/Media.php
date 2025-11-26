@@ -10,7 +10,7 @@ class Media extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'file_path', 'file_type', 'id_admin', 'session_id', 'created_at', 'qr', 'link'
+        'file_path', 'file_type', 'id_admin', 'session_id', 'created_at', 'link'
     ];
 
     

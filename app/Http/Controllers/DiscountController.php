@@ -18,7 +18,7 @@ class DiscountController extends Controller
         $request->validate(['id_admin' => 'required|integer']);
 
         $discounts = Discount::where('id_admin', $request->id_admin)
-            ->select('id', 'code', 'value', 'quantity', 'count_quantity', 'startDate', 'endDate')
+            ->select('id', 'code', 'value', 'quantity', 'count_quantity', 'startdate', 'enddate')
             ->get();
 
         return response()->json($discounts);
@@ -49,7 +49,7 @@ class DiscountController extends Controller
         }
 
         $now = now()->toDateString();
-        if ($now < $discount->startDate || $now > $discount->endDate) {
+        if ($now < $discount->startdate || $now > $discount->enddate) {
             throw ValidationException::withMessages([
                 'code' => ['Mã giảm giá không còn hiệu lực']
             ]);
@@ -85,7 +85,7 @@ class DiscountController extends Controller
         }
 
         $now = now()->toDateString();
-        if ($now < $discount->startDate || $now > $discount->endDate) {
+        if ($now < $discount->startdate || $now > $discount->enddate) {
             return response()->json(['status' => 'error', 'message' => 'Mã đã hết hạn'], 400);
         }
 
@@ -192,7 +192,7 @@ class DiscountController extends Controller
         }
 
         $discounts = Discount::where('id_admin', $adminId)
-            ->select('id', 'code', 'value', 'quantity', 'count_quantity', 'startDate', 'endDate')
+            ->select('id', 'code', 'value', 'quantity', 'count_quantity', 'startdate', 'enddate')
             ->get();
 
         return response()->json($discounts);
@@ -202,14 +202,14 @@ class DiscountController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'startDate' => 'required|date|after_or_equal:today',
-            'endDate'   => 'required|date|after:startDate',
+            'startdate' => 'required|date|after_or_equal:today',
+            'enddate'   => 'required|date|after:startdate',
             'value'     => 'required|numeric|min:0.01',
             'quantity'  => 'required|integer|min:1',
             'id_admin'  => 'required|integer',
         ], [
-            'startDate.after_or_equal' => 'Ngày phải bắt đầu từ ngày hôm nay trở đi',
-            'endDate.after'            => 'Ngày kết thúc phải sau ngày bắt đầu',
+            'startdate.after_or_equal' => 'Ngày phải bắt đầu từ ngày hôm nay trở đi',
+            'enddate.after'            => 'Ngày kết thúc phải sau ngày bắt đầu',
             'value.min'                => 'Giá trị giảm giá phải lớn hơn 0',
         ]);
 
@@ -227,8 +227,8 @@ class DiscountController extends Controller
 
         $discount = Discount::create([
             'code'           => $code,
-            'startDate'      => $request->startDate,
-            'endDate'        => $request->endDate,
+            'startdate'      => $request->startdate,
+            'enddate'        => $request->enddate,
             'value'          => $request->value,
             'quantity'       => $request->quantity,
             'count_quantity' => 0,
@@ -246,12 +246,12 @@ class DiscountController extends Controller
     public function update(Request $request, $id)
     {
         $validator = Validator::make($request->all(), [
-            'startDate' => 'required|date',
-            'endDate'   => 'required|date|after:startDate',
+            'startdate' => 'required|date',
+            'enddate'   => 'required|date|after:startdate',
             'value'     => 'required|numeric|min:0.01',
             'quantity'  => 'required|integer|min:1',
         ], [
-            'endDate.after' => 'Ngày kết thúc phải sau ngày bắt đầu',
+            'enddate.after' => 'Ngày kết thúc phải sau ngày bắt đầu',
         ]);
 
         if ($validator->fails()) {
@@ -270,8 +270,8 @@ class DiscountController extends Controller
         }
 
         $discount->update([
-            'startDate' => $request->startDate,
-            'endDate'   => $request->endDate,
+            'startdate' => $request->startdate,
+            'enddate'   => $request->enddate,
             'value'     => $request->value,
             'quantity'  => $request->quantity,
         ]);

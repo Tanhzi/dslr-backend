@@ -5,11 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Pay;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 class RevenueController extends Controller
 {
-    // GET /api/revenue/summary?id_admin=1
-    // Tổng doanh thu theo tháng/năm, cuts, và **theo từng id_client**
     public function summary(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -22,22 +21,21 @@ class RevenueController extends Controller
 
         $data = Pay::selectRaw('
             id_client,
-            MONTH(date) as month,
-            YEAR(date) as year,
+            EXTRACT(MONTH FROM date) as month,
+            EXTRACT(YEAR FROM date) as year,
             cuts,
             SUM(price) as total_revenue
         ')
             ->where('id_admin', $request->id_admin)
-            ->groupBy('id_client', 'year', 'month', 'cuts')
-            ->orderBy('year')
-            ->orderBy('month')
+            ->groupBy('id_client', DB::raw('EXTRACT(YEAR FROM date)'), DB::raw('EXTRACT(MONTH FROM date)'), 'cuts')
+            ->orderBy(DB::raw('EXTRACT(YEAR FROM date)'))
+            ->orderBy(DB::raw('EXTRACT(MONTH FROM date)'))
             ->orderBy('id_client')
             ->get();
 
         return response()->json($data);
     }
 
-    // GET /api/revenue/range?from_date=...&to_date=...&id_admin=1
     public function byDateRange(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -53,8 +51,8 @@ class RevenueController extends Controller
         $data = Pay::selectRaw('
             id_client,
             MIN(DATE(date)) as date,
-            MONTH(date) as month,
-            YEAR(date) as year,
+            EXTRACT(MONTH FROM date) as month,
+            EXTRACT(YEAR FROM date) as year,
             cuts,
             SUM(discount) as discount,
             SUM(discount_price) as discount_price,
@@ -62,16 +60,15 @@ class RevenueController extends Controller
         ')
             ->whereBetween('date', [$request->from_date, $request->to_date])
             ->where('id_admin', $request->id_admin)
-            ->groupBy('id_client', 'year', 'month', 'cuts')
-            ->orderBy('year')
-            ->orderBy('month')
+            ->groupBy('id_client', DB::raw('EXTRACT(YEAR FROM date)'), DB::raw('EXTRACT(MONTH FROM date)'), 'cuts')
+            ->orderBy(DB::raw('EXTRACT(YEAR FROM date)'))
+            ->orderBy(DB::raw('EXTRACT(MONTH FROM date)'))
             ->orderBy('id_client')
             ->get();
 
         return response()->json($data);
     }
 
-    // GET /api/revenue/month?month=4&year=2025&id_admin=1
     public function byMonth(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -86,24 +83,23 @@ class RevenueController extends Controller
 
         $data = Pay::selectRaw('
             id_client,
-            MONTH(date) as month,
-            YEAR(date) as year,
+            EXTRACT(MONTH FROM date) as month,
+            EXTRACT(YEAR FROM date) as year,
             cuts,
             SUM(discount) as discount,
             SUM(discount_price) as discount_price,
             SUM(price) as total_revenue
         ')
-            ->whereRaw('MONTH(date) = ?', [$request->month])
-            ->whereRaw('YEAR(date) = ?', [$request->year])
             ->where('id_admin', $request->id_admin)
-            ->groupBy('id_client', 'cuts', 'month', 'year')
+            ->whereRaw('EXTRACT(MONTH FROM date) = ?', [$request->month])
+            ->whereRaw('EXTRACT(YEAR FROM date) = ?', [$request->year])
+            ->groupBy('id_client', 'cuts', DB::raw('EXTRACT(MONTH FROM date)'), DB::raw('EXTRACT(YEAR FROM date)'))
             ->orderBy('id_client')
             ->get();
 
         return response()->json($data);
     }
 
-    // GET /api/revenue/quarter?quarter=2&year=2025&id_admin=1
     public function byQuarter(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -122,18 +118,18 @@ class RevenueController extends Controller
 
         $data = Pay::selectRaw('
             id_client,
-            MONTH(date) as month,
-            YEAR(date) as year,
+            EXTRACT(MONTH FROM date) as month,
+            EXTRACT(YEAR FROM date) as year,
             cuts,
             SUM(discount) as discount,
             SUM(discount_price) as discount_price,
             SUM(price) as total_revenue
         ')
             ->where('id_admin', $request->id_admin)
-            ->whereRaw('YEAR(date) = ?', [$request->year])
-            ->whereRaw('MONTH(date) BETWEEN ? AND ?', [$startMonth, $endMonth])
-            ->groupBy('id_client', 'year', 'month', 'cuts')
-            ->orderBy('month')
+            ->whereRaw('EXTRACT(YEAR FROM date) = ?', [$request->year])
+            ->whereRaw('EXTRACT(MONTH FROM date) BETWEEN ? AND ?', [$startMonth, $endMonth])
+            ->groupBy('id_client', DB::raw('EXTRACT(YEAR FROM date)'), DB::raw('EXTRACT(MONTH FROM date)'), 'cuts')
+            ->orderBy(DB::raw('EXTRACT(MONTH FROM date)'))
             ->orderBy('id_client')
             ->get()
             ->map(function ($item) use ($quarter) {
@@ -144,7 +140,6 @@ class RevenueController extends Controller
         return response()->json($data);
     }
 
-    // GET /api/revenue/year?year=2025&id_admin=1
     public function byYear(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -158,15 +153,15 @@ class RevenueController extends Controller
 
         $data = Pay::selectRaw('
             id_client,
-            YEAR(date) as year,
+            EXTRACT(YEAR FROM date) as year,
             cuts,
             SUM(discount) as discount,
             SUM(discount_price) as discount_price,
             SUM(price) as total_revenue
         ')
-            ->whereRaw('YEAR(date) = ?', [$request->year])
             ->where('id_admin', $request->id_admin)
-            ->groupBy('id_client', 'cuts', 'year')
+            ->whereRaw('EXTRACT(YEAR FROM date) = ?', [$request->year])
+            ->groupBy('id_client', 'cuts', DB::raw('EXTRACT(YEAR FROM date)'))
             ->orderBy('id_client')
             ->get();
 

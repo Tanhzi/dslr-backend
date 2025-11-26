@@ -19,6 +19,9 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         
         $middleware->trustProxies(at: '*');
+        $middleware->alias([
+            'cors' => \Illuminate\Http\Middleware\HandleCors::class,
+        ]);
         
         // ✅ Tắt middleware redirect về home cho API
         $middleware->redirectGuestsTo(fn () => null);
