@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
@@ -187,6 +188,18 @@ Route::get('/frame-image-client/{filename}', function (string $filename) {
         ->header('Access-Control-Allow-Headers', 'Content-Type');
 })->name('frame.image');
 
+//xoá ảnh
+Route::get('/cleanup-trigger', function () {
+    if (!hash_equals('cleanup_token_2025_xyz_789abc', request()->query('token'))) {
+        abort(403);
+    }
+
+    Artisan::call('media:cleanup');
+    return response()->json([
+        'message' => 'Cleanup completed at ' . now(),
+        'status' => 'success'
+    ]);
+});
 
 // ==================== QUẢN LÝ STICKER (HOÀN HẢO, KHÔNG LỖI) ====================
 Route::prefix('stickers')->group(function () {
@@ -202,3 +215,6 @@ Route::prefix('ai-topics')->group(function () {
     Route::match(['put', 'patch'], '/{id}', [AiTopicController::class, 'update']);
     Route::delete('/{id}', [AiTopicController::class, 'destroy']);
 });
+
+
+
