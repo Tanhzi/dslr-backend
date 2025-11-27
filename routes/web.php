@@ -12,8 +12,8 @@ Route::get('/', function () {
 Route::get('/download', [MediaController::class, 'showDownloadPage']);
 
 Route::get('/cleanup-trigger', function () {
-    // 🔒 Bảo mật bằng token (bắt buộc)
-    if (!hash_equals('k8d9#Lm2$vPq!xR5', request()->query('token'))) {
+    // ✅ DÙNG TOKEN CHỈ CÓ CHỮ + SỐ + GẠCH DƯỚI
+    if (!hash_equals('cleanup_token_2025_xyz_789abc', request()->query('token'))) {
         abort(403);
     }
 
