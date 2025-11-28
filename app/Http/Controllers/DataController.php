@@ -38,7 +38,7 @@ public function getEventBackground(Request $request)
     return response()->json([
         'status' => 'success',
         'ev_back' => (int) $event->ev_back,
-        'background' => $backgroundUrl, // ← KHÔNG DÙNG base64
+        'background' => "http://localhost:8000" . $backgroundUrl, // ← KHÔNG DÙNG base64
         'applyBackground' => ((int) $event->ev_back === 2),
     ]);
 }

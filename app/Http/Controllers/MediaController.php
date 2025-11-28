@@ -246,14 +246,21 @@ public function sendOriginalImagesEmail(Request $request)
 
     $attachments = [];
     foreach ($imagesBase64 as $index => $base64) {
-        // ✅ Kiểm tra định dạng data URL: data:image/xxx;base64,...
+        // ✅ Hỗ trợ mọi định dạng ảnh: png, jpeg, jpg, gif, v.v.
         if (!preg_match('/^data:image\/(\w+);base64,/', $base64, $matches)) {
             continue;
         }
         $extension = strtolower($matches[1]);
+        // Chuẩn hóa extension nếu cần (ví dụ: jpeg → jpg)
+        if ($extension === 'jpeg') {
+            $extension = 'jpg';
+        }
+
         $data = substr($base64, strpos($base64, ',') + 1);
-        $decoded = base64_decode($data);
-        if ($decoded === false) continue;
+        $decoded = base64_decode($data, true); // true: strict mode
+        if ($decoded === false) {
+            continue;
+        }
 
         $filename = "image_{$index}.{$extension}";
         $attachments[] = [
@@ -297,7 +304,8 @@ public function sendOriginalImagesEmail(Request $request)
                     'email' => 'sweetlensp@gmail.com',
                 ],
                 'to' => [['email' => $email]],
-                'bcc' => [['email' => 'sweetlensp@gmail.com']],
+                // 🔴 XÓA DÒNG NÀY → Không BCC cho chính mình
+                // 'bcc' => [['email' => 'sweetlensp@gmail.com']],
                 'subject' => '📸 Ảnh gốc của bạn (không lưu trên web)',
                 'htmlContent' => $html,
                 'attachment' => $attachments,
@@ -310,7 +318,15 @@ public function sendOriginalImagesEmail(Request $request)
                 'message' => "Đã gửi ảnh gốc đến {$email} và không lưu lên web."
             ]);
         }
+
+        // Xử lý response không phải 201
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Gửi email thất bại: Mã trạng thái ' . $response->getStatusCode()
+        ], 500);
+
     } catch (\Exception $e) {
+        \Log::error("Gửi ảnh gốc qua email thất bại: " . $e->getMessage());
         return response()->json([
             'status' => 'error',
             'message' => 'Gửi email thất bại: ' . $e->getMessage()
