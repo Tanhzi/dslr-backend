@@ -14,6 +14,12 @@ return [
     |
     */
 
+    // config/services.php
+    'supabase' => [
+        'url' => env('SUPABASE_URL'),
+        'key' => env('SUPABASE_KEY'),
+    ],
+
     'brevo' => [
         'api_key' => env('BREVO_API_KEY'),
     ],

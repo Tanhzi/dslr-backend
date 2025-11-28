@@ -5,11 +5,53 @@ namespace App\Http\Controllers;
 use App\Models\Event;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Supabase\SupabaseClient;
 
 class EventController extends Controller
 {
+    protected string $bucket = 'event-assets';
+
+    protected function getSupabaseClient(): SupabaseClient
+    {
+        return new SupabaseClient(
+            config('services.supabase.url'),
+            config('services.supabase.key')
+        );
+    }
+
+    protected function getPublicUrl(string $filePath): ?string
+    {
+        if (!$filePath) return null;
+        return config('services.supabase.url') . '/storage/v1/object/public/' . $this->bucket . '/' . $filePath;
+    }
+
+    protected function uploadFileToSupabase(\Illuminate\Http\UploadedFile $file, string $folder): string
+    {
+        $filename = $folder . '/' . uniqid($folder . '_', true) . '.' . $file->getClientOriginalExtension();
+        $contents = file_get_contents($file->getPathname());
+        $mimeType = $file->getMimeType();
+
+        $client = $this->getSupabaseClient();
+        $response = $client->storage->from($this->bucket)->upload($filename, $contents, [
+            'contentType' => $mimeType,
+            'upsert' => false,
+        ]);
+
+        if (!empty($response->error)) {
+            throw new \Exception('Supabase upload error: ' . ($response->error->message ?? 'Unknown error'));
+        }
+
+        return $filename;
+    }
+
+    protected function deleteFileFromSupabase(?string $filePath): void
+    {
+        if (empty($filePath)) return;
+        $client = $this->getSupabaseClient();
+        $client->storage->from($this->bucket)->remove([$filePath]);
+    }
+
     // GET /api/events → danh sách sự kiện
     public function index(Request $request)
     {
@@ -30,8 +72,8 @@ class EventController extends Controller
                     'ev_back' => (int) $event->ev_back,
                     'ev_logo' => (int) $event->ev_logo,
                     'ev_note' => (int) $event->ev_note,
-                    'background' => $event->background ? Storage::url($event->background) : null,
-                    'logo' => $event->logo ? Storage::url($event->logo) : null,
+                    'background' => $this->getPublicUrl($event->background),
+                    'logo' => $this->getPublicUrl($event->logo),
                 ];
             });
 
@@ -83,7 +125,7 @@ class EventController extends Controller
                 'date' => $request->date,
                 'apply' => $request->apply,
                 'id_admin' => $id_admin,
-                // background, logo để null khi tạo mới
+                // background, logo để null
             ]);
 
             if (!empty($request->apply)) {
@@ -177,13 +219,9 @@ class EventController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Không tìm thấy event để xóa'], 404);
         }
 
-        // Xóa file ảnh (nếu có)
-        if (!empty($event->background)) {
-            Storage::disk('public')->delete($event->background);
-        }
-        if (!empty($event->logo)) {
-            Storage::disk('public')->delete($event->logo);
-        }
+        // Xóa file trên Supabase
+        $this->deleteFileFromSupabase($event->background);
+        $this->deleteFileFromSupabase($event->logo);
 
         $event->delete();
 
@@ -244,19 +282,17 @@ class EventController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Không tìm thấy event'], 404);
         }
 
-        $file = $request->file('logo');
         try {
-            if (!empty($event->logo)) {
-                Storage::disk('public')->delete($event->logo);
-            }
+            // Xóa logo cũ
+            $this->deleteFileFromSupabase($event->logo);
 
-            $filename = uniqid('logo_', true) . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs('logos', $filename, 'public');
+            // Upload mới
+            $newPath = $this->uploadFileToSupabase($request->file('logo'), 'logos');
 
             $ev_logo = $request->apply === 'home' ? 1 : 0;
 
             $event->update([
-                'logo' => $path,
+                'logo' => $newPath,
                 'ev_logo' => $ev_logo,
             ]);
 
@@ -288,14 +324,12 @@ class EventController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Không tìm thấy event'], 404);
         }
 
-        $file = $request->file('background');
         try {
-            if (!empty($event->background)) {
-                Storage::disk('public')->delete($event->background);
-            }
+            // Xóa background cũ
+            $this->deleteFileFromSupabase($event->background);
 
-            $filename = uniqid('bg_', true) . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs('backgrounds', $filename, 'public');
+            // Upload mới
+            $newPath = $this->uploadFileToSupabase($request->file('background'), 'backgrounds');
 
             $ev_back = match ($request->apply) {
                 'home' => 1,
@@ -304,7 +338,7 @@ class EventController extends Controller
             };
 
             $event->update([
-                'background' => $path,
+                'background' => $newPath,
                 'ev_back' => $ev_back,
             ]);
 
@@ -341,8 +375,8 @@ class EventController extends Controller
             'ev_back' => (int) $event->ev_back,
             'ev_logo' => (int) $event->ev_logo,
             'ev_note' => (int) $event->ev_note,
-            'background' => $event->background ? "https://dslr-api.onrender.com" . Storage::url($event->background) : null,
-            'logo' => $event->logo ? "https://dslr-api.onrender.com" . Storage::url($event->logo) : null,
+            'background' => $this->getPublicUrl($event->background),
+            'logo' => $this->getPublicUrl($event->logo),
             'notes' => $event->note1 || $event->note2 || $event->note3
                 ? ['note1' => $event->note1, 'note2' => $event->note2, 'note3' => $event->note3]
                 : null,
