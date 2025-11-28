@@ -341,8 +341,8 @@ class EventController extends Controller
             'ev_back' => (int) $event->ev_back,
             'ev_logo' => (int) $event->ev_logo,
             'ev_note' => (int) $event->ev_note,
-            'background' => $event->background ? Storage::url($event->background) : null,
-            'logo' => $event->logo ? Storage::url($event->logo) : null,
+            'background' => $event->background ? "https://dslr-api.onrender.com" . Storage::url($event->background) : null,
+            'logo' => $event->logo ? "https://dslr-api.onrender.com" . Storage::url($event->logo) : null,
             'notes' => $event->note1 || $event->note2 || $event->note3
                 ? ['note1' => $event->note1, 'note2' => $event->note2, 'note3' => $event->note3]
                 : null,

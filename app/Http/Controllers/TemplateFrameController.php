@@ -57,7 +57,7 @@ class TemplateFrameController extends Controller
 
             return [
                 'id' => (int) $item->id,
-                'frame' => 'http://localhost:8000' . $fullUrl, 
+                'frame' => 'https://dslr-api.onrender.com' . $fullUrl, 
                 'type' => $item->type ?? '',
                 'cuts' => $item->cuts ? (string) $item->cuts : '',
                 'id_topic' => $item->id_topic ? (int) $item->id_topic : null,
