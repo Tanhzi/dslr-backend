@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
 
 class DataController extends Controller
 {
@@ -30,15 +31,15 @@ public function getEventBackground(Request $request)
         ], 404);
     }
 
-    // ✅ Trả URL công khai (giống Appclien)
+    // ✅ Lấy public URL từ Supabase Storage
     $backgroundUrl = $event->background 
-        ? Storage::url($event->background) 
+        ? env('SUPABASE_URL') . '/storage/v1/object/public/event-assets/' . $event->background
         : null;
 
     return response()->json([
         'status' => 'success',
         'ev_back' => (int) $event->ev_back,
-        'background' => "http://localhost:8000" . $backgroundUrl, // ← KHÔNG DÙNG base64
+        'background' => $backgroundUrl, // ← URL công khai từ Supabase
         'applyBackground' => ((int) $event->ev_back === 2),
     ]);
 }

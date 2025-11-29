@@ -4,11 +4,45 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class TemplateFrameController extends Controller
 {
+    protected string $bucket = 'event-assets';
+    protected string $supabaseUrl;
+    protected string $supabaseKey;
+
+    public function __construct()
+    {
+        $this->supabaseUrl = env('SUPABASE_URL');
+        $this->supabaseKey = env('SUPABASE_KEY');
+    }
+
+    protected function getPublicUrl(string $filePath): string
+    {
+        return $this->supabaseUrl . '/storage/v1/object/public/' . $this->bucket . '/' . $filePath;
+    }
+
+    protected function uploadToSupabase(string $filePath, string $contents, string $mimeType)
+    {
+        $url = $this->supabaseUrl . '/storage/v1/object/' . $this->bucket . '/' . $filePath;
+        return Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->supabaseKey,
+            'apikey' => $this->supabaseKey,
+            'Content-Type' => $mimeType,
+        ])->withBody($contents, $mimeType)->post($url);
+    }
+
+    protected function deleteFromSupabase(string $filePath)
+    {
+        $url = $this->supabaseUrl . '/storage/v1/object/' . $this->bucket . '/' . $filePath;
+        return Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->supabaseKey,
+            'apikey' => $this->supabaseKey,
+        ])->delete($url);
+    }
+
     /**
      * Hiển thị danh sách khung ảnh
      */
@@ -26,7 +60,6 @@ class TemplateFrameController extends Controller
 
         $offset = ($page - 1) * $limit;
 
-        // LƯU Ý: select 'template.frame' (không phải frame_path)
         $query = DB::table('template')
             ->leftJoin('event', 'template.id_topic', '=', 'event.id')
             ->where('template.id_admin', $id_admin)
@@ -49,15 +82,10 @@ class TemplateFrameController extends Controller
             ->limit($limit)
             ->get();
 
-        // Chuyển đường dẫn thành URL công khai
         $frames = $frames->map(function ($item) {
-            $fullUrl = $item->frame 
-                ? Storage::url($item->frame) 
-                : null;
-
             return [
                 'id' => (int) $item->id,
-                'frame' => 'https://dslr-api.onrender.com' . $fullUrl, 
+                'frame' => $item->frame ? $this->getPublicUrl($item->frame) : null,
                 'type' => $item->type ?? '',
                 'cuts' => $item->cuts ? (string) $item->cuts : '',
                 'id_topic' => $item->id_topic ? (int) $item->id_topic : null,
@@ -105,15 +133,21 @@ class TemplateFrameController extends Controller
             }
 
             try {
-                // Tạo tên file duy nhất
-                $filename = uniqid('frame_', true) . '.' . $uploadedFile->getClientOriginalExtension();
-                // Lưu vào storage/app/public/frames/
-                $path = $uploadedFile->storeAs('frames', $filename, 'public');
+                $filename = 'frames/' . uniqid('frame_', true) . '.' . $uploadedFile->getClientOriginalExtension();
+                $contents = file_get_contents($uploadedFile->getPathname());
+                $mimeType = $uploadedFile->getMimeType();
+
+                $response = $this->uploadToSupabase($filename, $contents, $mimeType);
+
+                if ($response->failed()) {
+                    Log::error("Supabase upload frame index $index failed", $response->json());
+                    continue;
+                }
 
                 DB::table('template')->insert([
                     'id_admin' => $request->id_admin,
                     'id_topic' => $data['id_topic'],
-                    'frame' => $path, // ← lưu vào cột `frame` (VARCHAR)
+                    'frame' => $filename,
                     'type' => $data['type'],
                     'cuts' => $data['cuts']
                 ]);
@@ -171,14 +205,23 @@ class TemplateFrameController extends Controller
 
             if ($uploadedFile->isValid()) {
                 try {
-                    // Xóa file cũ nếu có
+                    // Xóa file cũ trên Supabase
                     if (!empty($frameRecord->frame)) {
-                        Storage::disk('public')->delete($frameRecord->frame);
+                        $this->deleteFromSupabase($frameRecord->frame);
                     }
 
-                    $filename = uniqid('frame_upd_', true) . '.' . $uploadedFile->getClientOriginalExtension();
-                    $path = $uploadedFile->storeAs('frames', $filename, 'public');
-                    $data['frame'] = $path; // ← lưu vào cột `frame`
+                    $filename = 'frames/' . uniqid('frame_upd_', true) . '.' . $uploadedFile->getClientOriginalExtension();
+                    $contents = file_get_contents($uploadedFile->getPathname());
+                    $mimeType = $uploadedFile->getMimeType();
+
+                    $response = $this->uploadToSupabase($filename, $contents, $mimeType);
+
+                    if ($response->failed()) {
+                        Log::error("Supabase upload update frame $id failed", $response->json());
+                        return response()->json(['status' => 'error', 'message' => 'Lỗi upload ảnh mới'], 500);
+                    }
+
+                    $data['frame'] = $filename;
                 } catch (\Exception $e) {
                     Log::error("Lỗi cập nhật ảnh khung $id: " . $e->getMessage());
                     return response()->json(['status' => 'error', 'message' => 'Lỗi lưu ảnh mới'], 500);
@@ -210,9 +253,9 @@ class TemplateFrameController extends Controller
         }
 
         try {
-            // Xóa file ảnh
+            // Xóa file trên Supabase
             if (!empty($frameRecord->frame)) {
-                Storage::disk('public')->delete($frameRecord->frame);
+                $this->deleteFromSupabase($frameRecord->frame);
             }
 
             DB::table('template')->where('id', $id)->delete();

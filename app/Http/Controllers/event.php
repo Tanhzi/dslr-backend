@@ -5,48 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\Event;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Http;
 
 class EventController extends Controller
 {
-    // Cấu hình Supabase
-    protected string $bucket = 'event-assets';
-    protected string $supabaseUrl;
-    protected string $supabaseKey;
-
-    public function __construct()
-    {
-        $this->supabaseUrl = config('services.supabase.url') ?: env('SUPABASE_URL');
-        $this->supabaseKey = config('services.supabase.key') ?: env('SUPABASE_KEY');
-    }
-
-    protected function getPublicUrl(string $filePath): string
-    {
-        return $this->supabaseUrl . '/storage/v1/object/public/' . $this->bucket . '/' . $filePath;
-    }
-
-    protected function uploadToSupabase(string $filePath, string $contents, string $mimeType)
-    {
-        $url = $this->supabaseUrl . '/storage/v1/object/' . $this->bucket . '/' . $filePath;
-        return Http::withHeaders([
-            'Authorization' => 'Bearer ' . $this->supabaseKey,
-            'apikey' => $this->supabaseKey,
-            'Content-Type' => $mimeType,
-        ])->withBody($contents, $mimeType)->post($url);
-    }
-
-    protected function deleteFromSupabase(string $filePath)
-    {
-        $url = $this->supabaseUrl . '/storage/v1/object/' . $this->bucket . '/' . $filePath;
-        return Http::withHeaders([
-            'Authorization' => 'Bearer ' . $this->supabaseKey,
-            'apikey' => $this->supabaseKey,
-        ])->delete($url);
-    }
-
-    // ===== CÁC HÀM API KHÁC GIỮ NGUYÊN =====
-
+    // GET /api/events → danh sách sự kiện
     public function index(Request $request)
     {
         $id_admin = $request->query('id_admin');
@@ -66,14 +30,15 @@ class EventController extends Controller
                     'ev_back' => (int) $event->ev_back,
                     'ev_logo' => (int) $event->ev_logo,
                     'ev_note' => (int) $event->ev_note,
-                    'background' => $event->background ? $this->getPublicUrl($event->background) : null,
-                    'logo' => $event->logo ? $this->getPublicUrl($event->logo) : null,
+                    'background' => $event->background ? Storage::url($event->background) : null,
+                    'logo' => $event->logo ? Storage::url($event->logo) : null,
                 ];
             });
 
         return response()->json($events);
     }
 
+    // GET /api/event-notes → ghi chú
     public function notes(Request $request)
     {
         $id_admin = $request->query('id_admin');
@@ -96,6 +61,7 @@ class EventController extends Controller
         return response()->json($notes);
     }
 
+    // POST /api/events → tạo mới
     public function store(Request $request)
     {
         $id_admin = $request->query('id_admin');
@@ -117,6 +83,7 @@ class EventController extends Controller
                 'date' => $request->date,
                 'apply' => $request->apply,
                 'id_admin' => $id_admin,
+                // background, logo để null khi tạo mới
             ]);
 
             if (!empty($request->apply)) {
@@ -143,6 +110,7 @@ class EventController extends Controller
         }
     }
 
+    // PUT /api/events/{id} → cập nhật
     public function update(Request $request, $id)
     {
         $id_admin = $request->query('id_admin');
@@ -193,6 +161,7 @@ class EventController extends Controller
         }
     }
 
+    // DELETE /api/events/{id}
     public function destroy(Request $request, $id)
     {
         $id_admin = $request->query('id_admin');
@@ -208,12 +177,12 @@ class EventController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Không tìm thấy event để xóa'], 404);
         }
 
-        // Xóa file trên Supabase
+        // Xóa file ảnh (nếu có)
         if (!empty($event->background)) {
-            $this->deleteFromSupabase($event->background);
+            Storage::disk('public')->delete($event->background);
         }
         if (!empty($event->logo)) {
-            $this->deleteFromSupabase($event->logo);
+            Storage::disk('public')->delete($event->logo);
         }
 
         $event->delete();
@@ -221,6 +190,7 @@ class EventController extends Controller
         return response()->json(['status' => 'success', 'message' => 'Xóa event thành công']);
     }
 
+    // POST /api/events/{id}/note
     public function updateNote(Request $request, $id)
     {
         $id_admin = $request->query('id_admin');
@@ -253,7 +223,7 @@ class EventController extends Controller
         }
     }
 
-    // ✅ CẬP NHẬT LOGO
+    // POST /api/events/{id}/logo
     public function updateLogo(Request $request, $id)
     {
         $id_admin = $request->query('id_admin');
@@ -276,25 +246,17 @@ class EventController extends Controller
 
         $file = $request->file('logo');
         try {
-            // Xóa file cũ
             if (!empty($event->logo)) {
-                $this->deleteFromSupabase($event->logo);
+                Storage::disk('public')->delete($event->logo);
             }
 
-            $filename = 'logos/' . uniqid('logo_', true) . '.' . $file->getClientOriginalExtension();
-            $contents = file_get_contents($file->getPathname());
-
-            $response = $this->uploadToSupabase($filename, $contents, $file->getMimeType());
-
-            if ($response->failed()) {
-                Log::error('Supabase upload logo failed', $response->json());
-                throw new \Exception('Upload logo failed');
-            }
+            $filename = uniqid('logo_', true) . '.' . $file->getClientOriginalExtension();
+            $path = $file->storeAs('logos', $filename, 'public');
 
             $ev_logo = $request->apply === 'home' ? 1 : 0;
 
             $event->update([
-                'logo' => $filename,
+                'logo' => $path,
                 'ev_logo' => $ev_logo,
             ]);
 
@@ -305,7 +267,7 @@ class EventController extends Controller
         }
     }
 
-    // ✅ CẬP NHẬT BACKGROUND
+    // POST /api/events/{id}/background
     public function updateBackground(Request $request, $id)
     {
         $id_admin = $request->query('id_admin');
@@ -329,18 +291,11 @@ class EventController extends Controller
         $file = $request->file('background');
         try {
             if (!empty($event->background)) {
-                $this->deleteFromSupabase($event->background);
+                Storage::disk('public')->delete($event->background);
             }
 
-            $filename = 'backgrounds/' . uniqid('bg_', true) . '.' . $file->getClientOriginalExtension();
-            $contents = file_get_contents($file->getPathname());
-
-            $response = $this->uploadToSupabase($filename, $contents, $file->getMimeType());
-
-            if ($response->failed()) {
-                Log::error('Supabase upload background failed', $response->json());
-                throw new \Exception('Upload background failed');
-            }
+            $filename = uniqid('bg_', true) . '.' . $file->getClientOriginalExtension();
+            $path = $file->storeAs('backgrounds', $filename, 'public');
 
             $ev_back = match ($request->apply) {
                 'home' => 1,
@@ -349,7 +304,7 @@ class EventController extends Controller
             };
 
             $event->update([
-                'background' => $filename,
+                'background' => $path,
                 'ev_back' => $ev_back,
             ]);
 
@@ -360,6 +315,7 @@ class EventController extends Controller
         }
     }
 
+    // GET /api/events/{id} → chi tiết event
     public function show(Request $request)
     {
         $request->validate([
@@ -385,8 +341,8 @@ class EventController extends Controller
             'ev_back' => (int) $event->ev_back,
             'ev_logo' => (int) $event->ev_logo,
             'ev_note' => (int) $event->ev_note,
-            'background' => $event->background ? $this->getPublicUrl($event->background) : null,
-            'logo' => $event->logo ? $this->getPublicUrl($event->logo) : null,
+            'background' => $event->background ? "https://dslr-api.onrender.com    " . Storage::url($event->background) : null,
+            'logo' => $event->logo ? "https://dslr-api.onrender.com    " . Storage::url($event->logo) : null,
             'notes' => $event->note1 || $event->note2 || $event->note3
                 ? ['note1' => $event->note1, 'note2' => $event->note2, 'note3' => $event->note3]
                 : null,
