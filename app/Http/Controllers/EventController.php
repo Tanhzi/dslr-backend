@@ -254,28 +254,35 @@ class EventController extends Controller
     }
 
     // ✅ CẬP NHẬT LOGO
-    public function updateLogo(Request $request, $id)
-    {
-        $id_admin = $request->query('id_admin');
-        if (!$id_admin) {
-            return response()->json(['status' => 'error', 'message' => 'Thiếu tham số: id_admin'], 400);
-        }
+public function updateLogo(Request $request, $id)
+{
+    $id_admin = $request->query('id_admin');
+    if (!$id_admin) {
+        return response()->json(['status' => 'error', 'message' => 'Thiếu tham số: id_admin'], 400);
+    }
 
-        $request->validate([
-            'logo' => 'required|image|mimes:png,jpg,jpeg,gif|max:8192',
-            'apply' => 'required|in:home,cancel',
-        ]);
+    // Validate apply luôn cần
+    $request->validate([
+        'apply' => 'required|in:home,cancel',
+    ]);
 
-        $event = Event::where('id', $id)
-            ->where('id_admin', $id_admin)
-            ->first();
+    $event = Event::where('id', $id)
+        ->where('id_admin', $id_admin)
+        ->first();
 
-        if (!$event) {
-            return response()->json(['status' => 'error', 'message' => 'Không tìm thấy event'], 404);
-        }
+    if (!$event) {
+        return response()->json(['status' => 'error', 'message' => 'Không tìm thấy event'], 404);
+    }
 
-        $file = $request->file('logo');
-        try {
+    try {
+        // Nếu có file → upload mới
+        if ($request->hasFile('logo')) {
+            $request->validate([
+                'logo' => 'required|image|mimes:png,jpg,jpeg,gif|max:8192',
+            ]);
+
+            $file = $request->file('logo');
+
             // Xóa file cũ
             if (!empty($event->logo)) {
                 $this->deleteFromSupabase($event->logo);
@@ -291,43 +298,48 @@ class EventController extends Controller
                 throw new \Exception('Upload logo failed');
             }
 
-            $ev_logo = $request->apply === 'home' ? 1 : 0;
-
-            $event->update([
-                'logo' => $filename,
-                'ev_logo' => $ev_logo,
-            ]);
-
-            return response()->json(['status' => 'success', 'message' => 'Cập nhật logo thành công!']);
-        } catch (\Exception $e) {
-            Log::error("Lỗi lưu logo cho event $id: " . $e->getMessage());
-            return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống khi lưu logo'], 500);
+            $event->logo = $filename;
         }
+
+        // Cập nhật apply
+        $event->ev_logo = $request->apply === 'home' ? 1 : 0;
+        $event->save();
+
+        return response()->json(['status' => 'success', 'message' => 'Cập nhật logo thành công!']);
+    } catch (\Exception $e) {
+        Log::error("Lỗi lưu logo cho event $id: " . $e->getMessage());
+        return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống khi lưu logo'], 500);
     }
+}
 
     // ✅ CẬP NHẬT BACKGROUND
-    public function updateBackground(Request $request, $id)
-    {
-        $id_admin = $request->query('id_admin');
-        if (!$id_admin) {
-            return response()->json(['status' => 'error', 'message' => 'Thiếu tham số: id_admin'], 400);
-        }
+public function updateBackground(Request $request, $id)
+{
+    $id_admin = $request->query('id_admin');
+    if (!$id_admin) {
+        return response()->json(['status' => 'error', 'message' => 'Thiếu tham số: id_admin'], 400);
+    }
 
-        $request->validate([
-            'background' => 'required|image|mimes:png,jpg,jpeg,gif|max:8192',
-            'apply' => 'required|in:home,all-pages',
-        ]);
+$request->validate([
+    'apply' => 'required|in:home,all-pages,cancel', 
+]);
 
-        $event = Event::where('id', $id)
-            ->where('id_admin', $id_admin)
-            ->first();
+    $event = Event::where('id', $id)
+        ->where('id_admin', $id_admin)
+        ->first();
 
-        if (!$event) {
-            return response()->json(['status' => 'error', 'message' => 'Không tìm thấy event'], 404);
-        }
+    if (!$event) {
+        return response()->json(['status' => 'error', 'message' => 'Không tìm thấy event'], 404);
+    }
 
-        $file = $request->file('background');
-        try {
+    try {
+        if ($request->hasFile('background')) {
+            $request->validate([
+                'background' => 'required|image|mimes:png,jpg,jpeg,gif|max:8192',
+            ]);
+
+            $file = $request->file('background');
+
             if (!empty($event->background)) {
                 $this->deleteFromSupabase($event->background);
             }
@@ -342,23 +354,23 @@ class EventController extends Controller
                 throw new \Exception('Upload background failed');
             }
 
-            $ev_back = match ($request->apply) {
-                'home' => 1,
-                'all-pages' => 2,
-                default => 0,
-            };
-
-            $event->update([
-                'background' => $filename,
-                'ev_back' => $ev_back,
-            ]);
-
-            return response()->json(['status' => 'success', 'message' => 'Cập nhật ảnh nền thành công!']);
-        } catch (\Exception $e) {
-            Log::error("Lỗi lưu background cho event $id: " . $e->getMessage());
-            return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống khi lưu ảnh nền'], 500);
+            $event->background = $filename;
         }
+
+        $event->ev_back = match ($request->apply) {
+            'home' => 1,
+            'all-pages' => 2,
+            'cancel' => 0,
+        };
+
+        $event->save();
+
+        return response()->json(['status' => 'success', 'message' => 'Cập nhật ảnh nền thành công!']);
+    } catch (\Exception $e) {
+        Log::error("Lỗi lưu background cho event $id: " . $e->getMessage());
+        return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống khi lưu ảnh nền'], 500);
     }
+}
 
     public function show(Request $request)
     {

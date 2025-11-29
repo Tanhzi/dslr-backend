@@ -6,7 +6,15 @@
     <title>Tải Ảnh Của Bạn</title>
     <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* ======== RESET & BODY ======== */
+        /* ========== RESET & MOBILE-SAFE BASE ========== */
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            overflow-x: hidden;
+        }
+
         body {
             font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background: linear-gradient(135deg, #fff0f5, #fff5fa, #fff9fb);
@@ -17,13 +25,19 @@
             line-height: 1.6;
         }
 
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+
         /* ======== CONTAINER CHÍNH ======== */
         .container {
             max-width: 900px;
-            margin: 40px auto;
+            margin: 20px auto;
             background: rgba(255, 255, 255, 0.9);
-            padding: 40px;
-            border-radius: 30px;
+            padding: 25px 16px;
+            border-radius: 24px;
             box-shadow: 0 10px 40px rgba(255, 105, 180, 0.15);
             border: 3px solid #ffb6c1;
             backdrop-filter: blur(10px);
@@ -35,14 +49,15 @@
             color: #d81b60;
             font-size: 2.8rem;
             font-weight: 800;
-            margin-bottom: 40px;
+            margin-bottom: 30px;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.05);
             letter-spacing: 1.5px;
-            animation: pulse 2s infinite;
+            animation: pulse 2s infinite, glowPink 3s ease-in-out infinite alternate;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 12px;
+            padding: 0 10px;
         }
 
         h1::before,
@@ -59,7 +74,7 @@
         h2 {
             border-bottom: 4px solid #ffb6c1;
             padding-bottom: 15px;
-            margin-top: 50px;
+            margin-top: 40px;
             color: #ff69b4;
             font-weight: 700;
             font-size: 1.8rem;
@@ -87,7 +102,7 @@
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
             gap: 25px;
-            margin-top: 30px;
+            margin-top: 25px;
         }
 
         .media-item {
@@ -108,7 +123,6 @@
 
         .media-item img {
             width: 100%;
-            height: auto;
             display: block;
             border-radius: 16px 16px 0 0;
             transition: filter 0.3s ease;
@@ -147,19 +161,22 @@
         }
 
         .single-download-btn {
-            padding: 5px 10px;
+            padding: 6px 12px;
             font-size: 12px;
-            border-radius: 15px;
-            max-width: 120px;
+            border-radius: 12px;
+            max-width: 110px;
             margin: 10px auto !important;
             display: block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         /* ======== ẢNH CHÍNH (GHÉP/GIF) ======== */
         .main-image-container {
             text-align: center;
-            margin: 50px 0;
-            padding: 30px;
+            margin: 40px 0;
+            padding: 25px;
             background: rgba(255, 245, 250, 0.7);
             border-radius: 25px;
             border: 3px dashed #ffb6c1;
@@ -172,64 +189,64 @@
             transform: translateY(-5px);
         }
 
-        .main-image-container img {
-            max-width: 100%;
-            border-radius: 20px;
-            box-shadow: 0 5px 20px rgba(255, 105, 180, 0.15);
-            transition: all 0.3s ease;
-        }
+.main-image-container img {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+    border-radius: 20px;
+    box-shadow: 0 5px 20px rgba(255, 105, 180, 0.15);
+    transition: all 0.3s ease;
+}
 
-        .main-image-container:hover img {
-            transform: scale(1.03);
-            box-shadow: 0 10px 30px rgba(255, 105, 180, 0.25);
-        }
+.main-image-container:hover img {
+    transform: scale(1.03);
+    box-shadow: 0 10px 30px rgba(255, 105, 180, 0.25);
+}
 
-        /* ======== TRẠNG THÁI LOADING ======== */
-        .loading {
+        /* ======== TRẠNG THÁI LOADING & LỖI ======== */
+        .loading, .error-message {
             text-align: center;
+            padding: 50px 20px;
+            border-radius: 25px;
+            margin: 40px auto;
+            max-width: 500px;
+            border: 3px dashed #ffb6c1;
+        }
+
+        .loading {
             font-size: 1.4em;
-            padding: 60px 30px;
             color: #ff69b4;
             font-weight: 600;
             background: rgba(255, 245, 250, 0.8);
-            border-radius: 25px;
-            margin: 50px auto;
-            max-width: 500px;
-            border: 3px dashed #ffb6c1;
             animation: pulse 1.5s infinite;
         }
 
-        /* ======== THÔNG BÁO LỖI ======== */
         .error-message {
-            text-align: center;
             color: #d81b60;
             font-weight: 700;
             background: rgba(255, 240, 245, 0.9);
-            padding: 25px;
-            border-radius: 20px;
-            border: 3px solid #ffb6c1;
-            margin: 50px auto;
-            max-width: 600px;
             font-size: 1.1rem;
             box-shadow: 0 5px 15px rgba(216, 27, 96, 0.1);
+            border-style: solid;
         }
 
         /* ======== RESPONSIVE ======== */
         @media (max-width: 768px) {
             .container {
-                margin: 20px 15px;
-                padding: 30px 20px;
-                border-radius: 25px;
+                margin: 15px;
+                padding: 25px 16px;
+                border-radius: 20px;
             }
 
             h1 {
                 font-size: 2.2rem;
-                margin-bottom: 30px;
+                margin-bottom: 25px;
             }
 
             h2 {
                 font-size: 1.5rem;
-                margin-top: 40px;
+                margin-top: 35px;
             }
 
             .gallery {
@@ -237,30 +254,27 @@
                 gap: 20px;
             }
 
-            .media-item {
-                border-radius: 18px;
-            }
-
-            .download-btn {
-                padding: 12px 25px;
-                font-size: 14px;
-            }
-
             .main-image-container {
-                margin: 40px 0;
-                padding: 25px;
+                margin: 30px 0;
+                padding: 20px;
                 border-radius: 20px;
             }
 
-            .loading {
-                padding: 50px 20px;
+            .loading, .error-message {
+                padding: 40px 15px;
                 font-size: 1.3em;
             }
         }
 
         @media (max-width: 480px) {
             h1 {
-                font-size: 1.8rem;
+                font-size: 1.6rem;
+                gap: 6px;
+            }
+
+            h1::before,
+            h1::after {
+                font-size: 1.2em;
             }
 
             h2 {
@@ -274,6 +288,27 @@
 
             .gallery {
                 grid-template-columns: repeat(2, 1fr);
+                gap: 16px;
+            }
+
+            .media-item img {
+                border-radius: 12px 12px 0 0;
+            }
+
+            .single-download-btn {
+                padding: 6px 10px;
+                font-size: 11px;
+                max-width: 100px;
+            }
+        }
+
+        @media (max-width: 360px) {
+            .gallery {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 1.5rem;
             }
         }
 
@@ -289,11 +324,6 @@
             28% { transform: scale(1); }
             42% { transform: scale(1.15); }
             70% { transform: scale(1); }
-        }
-
-        /* Glow nhẹ cho tiêu đề */
-        h1 {
-            animation: glowPink 3s ease-in-out infinite alternate;
         }
 
         @keyframes glowPink {
@@ -325,7 +355,7 @@
                 return;
             }
 
-            // Lấy đường dẫn API từ URL hiện tại
+            // Giữ nguyên logic gọi API như cũ
             const currentPath = window.location.pathname;
             const apiPath = currentPath.substring(0, currentPath.lastIndexOf('/'));
             const apiUrl = `{{ url('/api/media/session') }}?session_id={{ $sessionId }}`;

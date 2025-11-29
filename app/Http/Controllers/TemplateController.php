@@ -4,11 +4,33 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-use App\Models\Template;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class TemplateController extends Controller
 {
+    protected string $bucket = 'event-assets';
+    protected string $supabaseUrl;
+    protected string $supabaseKey;
+
+    public function __construct()
+    {
+        $this->supabaseUrl = env('SUPABASE_URL');
+        $this->supabaseKey = env('SUPABASE_KEY');
+    }
+
+    protected function getPublicUrl(string $filePath): string
+    {
+        return $this->supabaseUrl . '/storage/v1/object/public/' . $this->bucket . '/' . $filePath;
+    }
+
+    // Tải nội dung file từ Supabase dưới dạng binary
+    protected function downloadFileFromSupabase(string $filePath)
+    {
+        $url = $this->getPublicUrl($filePath);
+        return Http::withOptions(['timeout' => 30])->get($url);
+    }
+
     public function getFrameImage(Request $request)
     {
         $frameId = $request->query('id');
@@ -23,20 +45,19 @@ class TemplateController extends Controller
             return response()->json(['error' => 'Không tìm thấy khung ảnh'], 404);
         }
 
-        $base64 = null;
+        // Giả sử $template->frame là đường dẫn tương đối (vd: frames/xyz.png)
+        $response = $this->downloadFileFromSupabase($template->frame);
 
-        // Chỉ xử lý nếu frame là tên file (giả sử tên file < 200 ký tự)
-        if (strlen($template->frame) < 200) {
-            $path = storage_path('app/public/frames/' . $template->frame);
-            if (file_exists($path)) {
-                $base64 = base64_encode(file_get_contents($path));
-            }
-        }
-
-        if (!$base64) {
+        if ($response->failed()) {
+            Log::error("Tải khung ảnh từ Supabase thất bại", [
+                'frame_id' => $frameId,
+                'path' => $template->frame,
+                'error' => $response->body()
+            ]);
             return response()->json(['error' => 'Không thể tải khung ảnh'], 404);
         }
 
+        $base64 = base64_encode($response->body());
         $imageUrl = 'data:image/png;base64,' . $base64;
 
         return response()->json([
@@ -55,7 +76,6 @@ class TemplateController extends Controller
             ], 400);
         }
 
-        // Bước 1: Đếm top 5 id_frame từ bảng pays theo id_admin
         $topFrames = DB::table('pays')
             ->select('id_frame', DB::raw('COUNT(*) as usage_count'))
             ->where('id_admin', $id_admin)
@@ -72,29 +92,33 @@ class TemplateController extends Controller
             ]);
         }
 
-        // Lấy danh sách id_frame để truy vấn template
         $frameIds = $topFrames->pluck('id_frame')->toArray();
 
-        // Bước 2: Lấy dữ liệu template tương ứng
-        $templates = Template::whereIn('id', $frameIds)->get()->keyBy('id');
+        // Dùng DB::table thay vì Eloquent để đồng nhất với getFrameImage
+        $templates = DB::table('template')
+            ->whereIn('id', $frameIds)
+            ->get()
+            ->keyBy('id');
 
-        // Bước 3: Ghép kết quả và xử lý base64 cho frame
         $result = [];
 
         foreach ($topFrames as $item) {
             $template = $templates[$item->id_frame] ?? null;
 
             if (!$template || !$template->frame) {
-                // Nếu không có template hoặc frame, vẫn có thể trả count = 0 hoặc bỏ qua
                 continue;
             }
 
+            $response = $this->downloadFileFromSupabase($template->frame);
+
             $base64 = null;
-            if (strlen($template->frame) < 200) { // giả sử tên file ngắn => không phải BLOB
-                $path = storage_path('app/public/frames/' . $template->frame);
-                if (file_exists($path)) {
-                    $base64 = base64_encode(file_get_contents($path));
-                }
+            if ($response->successful()) {
+                $base64 = base64_encode($response->body());
+            } else {
+                Log::warning("Không tải được ảnh khung trong top frames", [
+                    'id_frame' => $item->id_frame,
+                    'path' => $template->frame
+                ]);
             }
 
             $result[] = [
