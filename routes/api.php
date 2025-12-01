@@ -35,6 +35,7 @@ use App\Http\Controllers\AiTopicController;
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/change-password', [AuthController::class, 'changePassword']);
 Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
 Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
@@ -183,14 +184,14 @@ Route::get('/frame-image-client/{filename}', function (string $filename) {
 
     return Response::make($file, 200)
         ->header('Content-Type', $mimeType)
-        ->header('Access-Control-Allow-Origin', 'http://localhost:5173')
+        ->header('Access-Control-Allow-Origin', 'https://sweetlens.vercel.app')
         ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
         ->header('Access-Control-Allow-Headers', 'Content-Type');
 })->name('frame.image');
 
 //xoá ảnh
 Route::get('/cleanup-trigger', function () {
-    if (!hash_equals('cleanup_token_2025_xyz_789abc', request()->query('token'))) {
+    if (!hash_equals('KnfiTh578238HJak64I7ui4', request()->query('token'))) {
         abort(403);
     }
 

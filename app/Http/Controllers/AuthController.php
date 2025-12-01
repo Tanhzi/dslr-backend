@@ -55,7 +55,7 @@ class AuthController extends Controller
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
-                'username' => ['Invalid username or password'],
+                'username' => ['Sai tài khoản hoặc mật khẩu'],
             ]);
         }
 
@@ -63,12 +63,40 @@ class AuthController extends Controller
             'status' => 'success',
             'message' => 'Login successful',
             'id' => $user->id,
+            'email' => $user->email,
             'username' => $user->username,
             'role' => (int) $user->role,
             'id_admin' => $user->id_admin ?? '',
             'id_topic' => $user->id_topic ?? '',
         ]);
     }
+
+    //đổi mật khẩu
+public function changePassword(Request $request)
+{
+    $request->validate([
+        'id' => 'required|exists:users,id',
+        'old_password' => 'required|string',
+        'password' => 'required|string|min:6|confirmed',
+    ]);
+
+    $user = User::findOrFail($request->id);
+
+    if (! Hash::check($request->old_password, $user->password)) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Mật khẩu cũ không chính xác.'
+        ], 422);
+    }
+
+    $user->password = $request->password;
+    $user->save();
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Đổi mật khẩu thành công!'
+    ]);
+}
 
     // 1. Gửi mã đặt lại mật khẩu
 public function forgotPassword(Request $request)
