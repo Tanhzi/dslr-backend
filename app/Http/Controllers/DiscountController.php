@@ -112,7 +112,7 @@ class DiscountController extends Controller
             'date' => 'required|date',
             'discount' => 'required|in:0,1',
             'discount_price' => 'required|numeric',
-            'discount_code' => 'required|string'
+            'discount_code' => 'nullable|string'
         ]);
 
         DB::beginTransaction();
@@ -125,7 +125,7 @@ class DiscountController extends Controller
                 'date' => $request->date,
                 'discount' => $request->discount,
                 'discount_price' => $request->discount_price,
-                'discount_code' => $request->discount_code
+                'discount_code' => $request->discount_code ?? null
             ]);
 
             DB::commit();

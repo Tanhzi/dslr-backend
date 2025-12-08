@@ -65,74 +65,64 @@ class TemplateController extends Controller
         ]);
     }
 
-    public function getTopFramesByAdmin(Request $request)
-    {
-        $id_admin = $request->query('id_admin');
+public function getTopFramesByAdmin(Request $request)
+{
+    $id_admin = $request->query('id_admin');
 
-        if (!$id_admin) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Thiếu tham số bắt buộc: id_admin'
-            ], 400);
-        }
+    if (!$id_admin) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Thiếu tham số bắt buộc: id_admin'
+        ], 400);
+    }
 
-        $topFrames = DB::table('pays')
-            ->select('id_frame', DB::raw('COUNT(*) as usage_count'))
-            ->where('id_admin', $id_admin)
-            ->whereNotNull('id_frame')
-            ->groupBy('id_frame')
-            ->orderByDesc('usage_count')
-            ->limit(5)
-            ->get();
+    $topFrames = DB::table('pays')
+        ->select('id_frame', DB::raw('COUNT(*) as usage_count'))
+        ->where('id_admin', $id_admin)
+        ->whereNotNull('id_frame')
+        ->groupBy('id_frame')
+        ->orderByDesc('usage_count')
+        ->limit(5)
+        ->get();
 
-        if ($topFrames->isEmpty()) {
-            return response()->json([
-                'status' => 'success',
-                'data' => []
-            ]);
-        }
-
-        $frameIds = $topFrames->pluck('id_frame')->toArray();
-
-        // Dùng DB::table thay vì Eloquent để đồng nhất với getFrameImage
-        $templates = DB::table('template')
-            ->whereIn('id', $frameIds)
-            ->get()
-            ->keyBy('id');
-
-        $result = [];
-
-        foreach ($topFrames as $item) {
-            $template = $templates[$item->id_frame] ?? null;
-
-            if (!$template || !$template->frame) {
-                continue;
-            }
-
-            $response = $this->downloadFileFromSupabase($template->frame);
-
-            $base64 = null;
-            if ($response->successful()) {
-                $base64 = base64_encode($response->body());
-            } else {
-                Log::warning("Không tải được ảnh khung trong top frames", [
-                    'id_frame' => $item->id_frame,
-                    'path' => $template->frame
-                ]);
-            }
-
-            $result[] = [
-                'id_frame' => (int) $item->id_frame,
-                'usage_count' => (int) $item->usage_count,
-                'frame' => $base64 ? 'data:image/png;base64,' . $base64 : null,
-                'type' => $template->type ?? '',
-                'cuts' => $template->cuts ?? ''
-            ];
-        }
-
+    if ($topFrames->isEmpty()) {
         return response()->json([
             'status' => 'success',
-            'data' => $result
+            'data' => []
         ]);
     }
+
+    $frameIds = $topFrames->pluck('id_frame')->toArray();
+
+    $templates = DB::table('template')
+        ->whereIn('id', $frameIds)
+        ->get()
+        ->keyBy('id');
+
+    $result = [];
+
+    foreach ($topFrames as $item) {
+        $template = $templates[$item->id_frame] ?? null;
+
+        if (!$template || !$template->frame) {
+            continue;
+        }
+
+        // ✅ TRẢ TRỰC TIẾP PUBLIC URL — KHÔNG CẦN TẢI ẢNH!
+        $frameUrl = $this->getPublicUrl($template->frame);
+
+        $result[] = [
+            'id_frame' => (int) $item->id_frame,
+            'usage_count' => (int) $item->usage_count,
+            'frame' => $frameUrl, // ← ĐÂY LÀ URL, KHÔNG PHẢI BASE64
+            'type' => $template->type ?? '',
+            'cuts' => $template->cuts ?? ''
+        ];
+    }
+
+    return response()->json([
+        'status' => 'success',
+        'data' => $result
+    ]);
+}
 }

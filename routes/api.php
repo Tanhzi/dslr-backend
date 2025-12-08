@@ -32,6 +32,9 @@ use App\Http\Controllers\StickerController;
 // AI Topic
 use App\Http\Controllers\AiTopicController;
 
+// contentchat
+use App\Http\Controllers\ContentController;
+
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
@@ -217,5 +220,9 @@ Route::prefix('ai-topics')->group(function () {
     Route::delete('/{id}', [AiTopicController::class, 'destroy']);
 });
 
-
-
+Route::prefix('content-chat')->group(function () {
+    Route::get('/', [ContentController::class, 'index']);
+    Route::post('/', [ContentController::class, 'store']);
+    Route::put('/{id}', [ContentController::class, 'update']);
+    Route::delete('/{id}', [ContentController::class, 'destroy']);
+});

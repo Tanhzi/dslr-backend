@@ -27,35 +27,48 @@ class AutoCleanupMedia extends Command
         $supabaseUrl = config('services.supabase.url') ?: env('SUPABASE_URL');
         $supabaseKey = config('services.supabase.key') ?: env('SUPABASE_KEY');
 
-        foreach ($oldMedia as $media) {
-            // 1. XÓA FILE TRÊN SUPABASE (nếu có đường dẫn)
-            if (!empty($media->file_path)) {
-                try {
-                    $deleteUrl = $supabaseUrl . '/storage/v1/object/' . $bucket . '/' . $media->file_path;
-                    $response = Http::withHeaders([
-                        'Authorization' => 'Bearer ' . $supabaseKey,
-                        'apikey' => $supabaseKey,
-                    ])->delete($deleteUrl);
+// ...
 
-                    if ($response->failed()) {
-                        // Không dừng toàn bộ nếu 1 file lỗi — log và tiếp tục
-                        Log::warning("Supabase delete failed for media ID {$media->id}", [
-                            'path' => $media->file_path,
-                            'error' => $response->json()
-                        ]);
-                    }
-                } catch (\Exception $e) {
-                    Log::error("Exception when deleting media ID {$media->id} from Supabase", [
-                        'path' => $media->file_path,
-                        'message' => $e->getMessage()
-                    ]);
-                }
+foreach ($oldMedia as $media) {
+    // 1. XÓA FILE TRÊN SUPABASE (nếu có đường dẫn)
+    if (!empty($media->file_path)) {
+        try {
+            $deleteUrl = $supabaseUrl . '/storage/v1/object/' . $bucket . '/' . $media->file_path;
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $supabaseKey,
+                'apikey' => $supabaseKey,
+            ])->delete($deleteUrl);
+
+            if ($response->failed()) {
+                Log::warning("Supabase delete failed for media ID {$media->id}", [
+                    'path' => $media->file_path,
+                    'error' => $response->json()
+                ]);
             }
-
-            // 2. XÓA BẢN GHI TRONG DB
-            $media->delete();
-            $deletedCount++;
+        } catch (\Exception $e) {
+            Log::error("Exception when deleting media ID {$media->id} from Supabase", [
+                'path' => $media->file_path,
+                'message' => $e->getMessage()
+            ]);
         }
+    }
+
+    // 2. NẾU LÀ QR, XÓA id_qr TRONG BẢNG pays
+    if ($media->file_type === 'qr' && !empty($media->session_id)) {
+        try {
+            \App\Models\Pay::where('id_qr', $media->session_id)->update(['id_qr' => null]);
+        } catch (\Exception $e) {
+            Log::error("Failed to clear id_qr in pays for session_id {$media->session_id}", [
+                'media_id' => $media->id,
+                'message' => $e->getMessage()
+            ]);
+        }
+    }
+
+    // 3. XÓA BẢN GHI TRONG DB
+    $media->delete();
+    $deletedCount++;
+}
 
         $this->info("Đã xóa {$deletedCount} media cũ (cũ hơn 24 giờ).");
     }

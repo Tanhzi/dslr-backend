@@ -27,7 +27,9 @@ class ReportController extends Controller
 
         $id_admin = $request->id_admin;
 
-        $total_customers = User::where('id_admin', $id_admin)->count();
+        $total_customers = User::where('id_admin', $id_admin)
+            ->where('role', 0)
+            ->count();
 
         return response()->json([
             'total_customers' => $total_customers
