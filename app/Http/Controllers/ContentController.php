@@ -39,7 +39,7 @@ class ContentController extends Controller
 
         $total = $query->count();
 
-        $contents = $query->orderBy('id', 'desc')
+        $contents = $query->orderBy('id', 'asc')
             ->offset($offset)
             ->limit($limit)
             ->get();

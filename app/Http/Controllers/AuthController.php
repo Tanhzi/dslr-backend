@@ -17,14 +17,22 @@ class AuthController extends Controller
     {
         // Validate dữ liệu
         $validated = $request->validate([
-            'username' => 'required|string|max:255|unique:users',
+            'username' => 'required|string|max:50|unique:users',
             'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:6',
+            'password' => [
+                'required',
+                'string',
+                'min:6',
+                'max:50',
+                'regex:/^\S*$/' 
+            ],     
         ], [
             'username.unique' => 'Tên đăng nhập đã được sử dụng',
             'email.unique' => 'Email đã được đăng ký',
             'email.email' => 'Định dạng email không hợp lệ',
-            'password.min' => 'Mật khẩu phải có ít nhất 6 ký tự'
+            'password.min' => 'Mật khẩu phải có ít nhất 6 ký tự',
+            'password.max' => 'Mật khẩu phải có tối đa 50 ký tự',
+            'password.regex' => 'Mật khẩu không được chứa khoảng trắng'
         ]);
 
         // Tạo user mới
@@ -44,32 +52,36 @@ class AuthController extends Controller
     }
 
     // Đăng nhập
-    public function login(Request $request)
-    {
-        $request->validate([
-            'username' => 'required|string',
-            'password' => 'required|string',
-        ]);
+public function login(Request $request)
+{
+    $request->validate([
+        'username' => 'required|string',
+        'password' => 'required|string',
+    ]);
 
-        $user = User::where('username', $request->username)->first();
+    // Lấy username và chuyển về dạng thường để so sánh
+    $username = trim($request->username);
+    
+    // Tìm user với username KHÔNG PHÂN BIỆT HOA/THƯỜNG
+    $user = User::whereRaw('LOWER(username) = ?', [strtolower($username)])->first();
 
-        if (! $user || ! Hash::check($request->password, $user->password)) {
-            throw ValidationException::withMessages([
-                'username' => ['Sai tài khoản hoặc mật khẩu'],
-            ]);
-        }
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Login successful',
-            'id' => $user->id,
-            'email' => $user->email,
-            'username' => $user->username,
-            'role' => (int) $user->role,
-            'id_admin' => $user->id_admin ?? '',
-            'id_topic' => $user->id_topic ?? '',
+    if (! $user || ! Hash::check($request->password, $user->password)) {
+        throw ValidationException::withMessages([
+            'username' => ['Sai tài khoản hoặc mật khẩu'],
         ]);
     }
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Login successful',
+        'id' => $user->id,
+        'email' => $user->email,
+        'username' => $user->username, // Trả về nguyên dạng đã lưu
+        'role' => (int) $user->role,
+        'id_admin' => $user->id_admin ?? '',
+        'id_topic' => $user->id_topic ?? '',
+    ]);
+}
 
     //đổi mật khẩu
 public function changePassword(Request $request)
@@ -77,7 +89,19 @@ public function changePassword(Request $request)
     $request->validate([
         'id' => 'required|exists:users,id',
         'old_password' => 'required|string',
-        'password' => 'required|string|min:6|confirmed',
+        'password' => [
+            'required',
+            'string',
+            'min:6',
+            'max:50',
+            'confirmed',
+            'regex:/^\S*$/' 
+        ],
+    ], [
+        'password.min' => 'Mật khẩu phải có ít nhất 6 ký tự',
+        'password.max' => 'Mật khẩu không được vượt quá 50 ký tự',
+        'password.confirmed' => 'Xác nhận mật khẩu không khớp',
+        'password.regex' => 'Mật khẩu không được chứa khoảng trắng'
     ]);
 
     $user = User::findOrFail($request->id);
@@ -162,10 +186,19 @@ public function resetPassword(Request $request)
     $request->validate([
         'email' => 'required|email|exists:users,email',
         'otp' => 'required|numeric|digits:6',
-        'password' => 'required|string|min:6|confirmed',
+        'password' => [
+            'required',
+            'string',
+            'min:6',
+            'max:50',
+            'confirmed',
+            'regex:/^\S*$/' 
+        ],
     ], [
-        'password.confirmed' => 'Mật khẩu xác nhận không khớp.',
-        'password.min' => 'Mật khẩu phải có ít nhất 6 ký tự.'
+        'password.min' => 'Mật khẩu phải có ít nhất 6 ký tự',
+        'password.max' => 'Mật khẩu không được vượt quá 50 ký tự',
+        'password.confirmed' => 'Xác nhận mật khẩu không khớp',
+        'password.regex' => 'Mật khẩu không được chứa khoảng trắng'
     ]);
 
     $user = User::where('email', $request->email)

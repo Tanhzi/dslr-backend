@@ -96,102 +96,147 @@ class EventController extends Controller
         return response()->json($notes);
     }
 
-    public function store(Request $request)
-    {
-        $id_admin = $request->query('id_admin');
-        if (!$id_admin || !is_numeric($id_admin)) {
-            return response()->json(['status' => 'error', 'message' => 'Thiếu hoặc không hợp lệ: id_admin'], 400);
-        }
-
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'date' => 'required|date_format:Y-m-d',
-            'apply' => 'required|array',
-            'apply.*' => 'integer'
-        ]);
-
-        DB::beginTransaction();
-        try {
-            $event = Event::create([
-                'name' => $request->name,
-                'date' => $request->date,
-                'apply' => $request->apply,
-                'id_admin' => $id_admin,
-            ]);
-
-            if (!empty($request->apply)) {
-                Event::where('id', '!=', $event->id)
-                    ->where('id_admin', $id_admin)
-                    ->chunkById(100, function ($events) use ($request) {
-                        foreach ($events as $e) {
-                            $e->apply = array_values(array_diff($e->apply ?? [], $request->apply));
-                            $e->save();
-                        }
-                    });
-            }
-
-            DB::commit();
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Tạo event thành công',
-                'id' => $event->id
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error("Lỗi tạo event: " . $e->getMessage());
-            return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống'], 500);
-        }
+public function store(Request $request)
+{
+    $id_admin = $request->query('id_admin');
+    if (!$id_admin || !is_numeric($id_admin)) {
+        return response()->json(['status' => 'error', 'message' => 'Thiếu hoặc không hợp lệ: id_admin'], 400);
     }
 
-    public function update(Request $request, $id)
-    {
-        $id_admin = $request->query('id_admin');
-        if (!$id_admin) {
-            return response()->json(['status' => 'error', 'message' => 'Thiếu tham số: id_admin'], 400);
-        }
+    // 1. Sửa validate: đổi 'required' thành 'nullable'
+    $request->validate([
+        'name' => 'required|string|max:255',
+        'date' => 'required|date_format:Y-m-d',
+        'apply' => 'nullable|array', // Cho phép null hoặc mảng rỗng
+        'apply.*' => 'integer'
+    ]);
 
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'date' => 'required|date_format:Y-m-d',
-            'apply' => 'required|array',
-            'apply.*' => 'integer'
+    // 2. Đảm bảo biến $apply luôn là mảng (nếu null thì thành [])
+    $applyData = $request->input('apply', []);
+
+    DB::beginTransaction();
+    try {
+        $event = Event::create([
+            'name' => $request->name,
+            'date' => $request->date,
+            'apply' => $applyData, // Sử dụng biến đã xử lý
+            'id_admin' => $id_admin,
         ]);
 
-        $event = Event::where('id', $id)
-            ->where('id_admin', $id_admin)
-            ->first();
-
-        if (!$event) {
-            return response()->json(['status' => 'error', 'message' => 'Event không tồn tại'], 404);
+        // 3. Sử dụng $applyData thay vì $request->apply trong logic xử lý trùng lặp
+        if (!empty($applyData)) {
+            Event::where('id', '!=', $event->id)
+                ->where('id_admin', $id_admin)
+                ->chunkById(100, function ($events) use ($applyData) { // Truyền $applyData vào use
+                    foreach ($events as $e) {
+                        // Tính toán lại mảng apply của các event khác
+                        $e->apply = array_values(array_diff($e->apply ?? [], $applyData));
+                        $e->save();
+                    }
+                });
         }
 
-        DB::beginTransaction();
-        try {
-            $event->update([
-                'name' => $request->name,
-                'date' => $request->date,
-                'apply' => $request->apply,
-            ]);
+        DB::commit();
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Tạo event thành công',
+            'id' => $event->id
+        ]);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error("Lỗi tạo event: " . $e->getMessage());
+        return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống'], 500);
+    }
+}
 
-            if (!empty($request->apply)) {
-                Event::where('id', '!=', $id)
-                    ->where('id_admin', $id_admin)
-                    ->chunkById(100, function ($events) use ($request) {
-                        foreach ($events as $e) {
-                            $e->apply = array_values(array_diff($e->apply ?? [], $request->apply));
+// Trong file EventController.php
+
+public function update(Request $request, $id)
+{
+    $id_admin = $request->query('id_admin');
+    if (!$id_admin) {
+        return response()->json(['status' => 'error', 'message' => 'Thiếu tham số: id_admin'], 400);
+    }
+
+    // Cho phép apply là mảng rỗng (nullable)
+    $request->validate([
+        'name' => 'required|string|max:255',
+        'date' => 'required|date_format:Y-m-d',
+        'apply' => 'nullable|array',
+        'apply.*' => 'integer'
+    ]);
+
+    // Tìm sự kiện hiện tại
+    $event = Event::where('id', $id)
+        ->where('id_admin', $id_admin)
+        ->first();
+
+    if (!$event) {
+        return response()->json(['status' => 'error', 'message' => 'Event không tồn tại'], 404);
+    }
+
+    // Xử lý mảng apply mới (nếu null thì là mảng rỗng)
+    $newApplyData = $request->input('apply', []);
+    
+    // Lấy mảng apply cũ (đảm bảo nó là array)
+    $oldApplyData = is_array($event->apply) ? $event->apply : (json_decode($event->apply, true) ?? []);
+
+    DB::beginTransaction();
+    try {
+        // --- LOGIC MỚI: XỬ LÝ USER BỊ BỎ CHỌN ---
+        // Tìm các ID có trong danh sách cũ nhưng KHÔNG có trong danh sách mới
+        $removedUserIds = array_diff($oldApplyData, $newApplyData);
+
+        if (!empty($removedUserIds)) {
+            // Cập nhật bảng users: set id_topic = null cho những user bị xóa khỏi sự kiện
+            // Sử dụng DB::table('users') để chắc chắn cập nhật đúng bảng
+            DB::table('users')
+                ->whereIn('id', $removedUserIds)
+                ->where('id_admin', $id_admin) // Đảm bảo chỉ sửa user của admin này
+                ->update(['id_topic' => null]); 
+        }
+        // ----------------------------------------
+
+        // Cập nhật thông tin sự kiện
+        $event->update([
+            'name' => $request->name,
+            'date' => $request->date,
+            'apply' => $newApplyData,
+        ]);
+
+        // Logic cũ: Đảm bảo một user không thuộc nhiều sự kiện khác nhau
+        if (!empty($newApplyData)) {
+            Event::where('id', '!=', $id)
+                ->where('id_admin', $id_admin)
+                ->chunkById(100, function ($events) use ($newApplyData) {
+                    foreach ($events as $e) {
+                        $currentApply = is_array($e->apply) ? $e->apply : (json_decode($e->apply, true) ?? []);
+                        // Loại bỏ các user vừa được chọn vào sự kiện này khỏi các sự kiện khác
+                        $updatedApply = array_values(array_diff($currentApply, $newApplyData));
+                        
+                        // Chỉ update nếu có thay đổi
+                        if (count($currentApply) !== count($updatedApply)) {
+                            $e->apply = $updatedApply;
                             $e->save();
                         }
-                    });
-            }
-
-            DB::commit();
-            return response()->json(['status' => 'success', 'message' => 'Cập nhật dữ liệu thành công']);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error("Lỗi cập nhật event $id: " . $e->getMessage());
-            return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống'], 500);
+                    }
+                });
+            
+            // (Tùy chọn) Cập nhật luôn id_topic cho những user vừa được thêm vào
+            DB::table('users')
+                ->whereIn('id', $newApplyData)
+                ->where('id_admin', $id_admin)
+                ->update(['id_topic' => $id]);
         }
+
+        DB::commit();
+        return response()->json(['status' => 'success', 'message' => 'Cập nhật dữ liệu thành công']);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error("Lỗi cập nhật event $id: " . $e->getMessage());
+        return response()->json(['status' => 'error', 'message' => 'Lỗi hệ thống'], 500);
     }
+}
 
     public function destroy(Request $request, $id)
     {

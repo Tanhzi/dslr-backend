@@ -16,6 +16,7 @@ class UserController extends Controller
         }
 
         $users = User::where('id_admin', $id_admin)
+            ->where('role', 0)
             ->select('id', 'username')
             ->get()
             ->map(function ($user) {

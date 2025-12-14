@@ -43,84 +43,48 @@ class AiTopicController extends Controller
         ])->delete($url);
     }
 
-    protected function downloadFromSupabase(string $filePath)
-    {
-        $url = $this->getPublicUrl($filePath);
-        return Http::withOptions(['timeout' => 30])->get($url);
-    }
-
 public function index(Request $request)
 {
     $id_admin = $request->query('id_admin');
-    $page = $request->query('page', 1);
-    $limit = $request->query('limit', 10);
-    $search = $request->query('search');
-    $filter_name = $request->query('filter_name');
+    $type = $request->query('type'); // 'swap' hoặc 'background'
 
     if (!$id_admin) {
         return response()->json(['status' => 'error', 'message' => 'Thiếu id_admin'], 400);
     }
 
-    $offset = ($page - 1) * $limit;
-
+    // Xây dựng truy vấn cơ bản
     $query = DB::table('ai_topics')
         ->where('id_admin', $id_admin)
-        ->select('id', 'name', 'type', 'illustration', 'is_prompt', 'status');
+        ->select('id', 'name', 'topic', 'type', 'illustration', 'prompt', 'status');
 
-    if ($search) {
-        $query->where(function ($q) use ($search) {
-            $q->where('name', 'like', "%{$search}%")
-              ->orWhere('type', 'like', "%{$search}%");
-        });
-    }
-
-    if ($filter_name && $filter_name !== 'all') {
-        $query->where('name', $filter_name);
-    }
-
-    $total = $query->count();
-
-    $topics = $query->orderBy('id', 'desc')
-        ->offset($offset)
-        ->limit($limit)
-        ->get();
-
-    $topics = $topics->map(function ($item) {
-        $illustration = null;
-
-        if (!$item->is_prompt && $item->illustration && strlen($item->illustration) < 200) {
-            // Là ảnh → trả URL
-            $illustration = $this->getPublicUrl($item->illustration);
-        } elseif ($item->is_prompt) {
-            // Là prompt → trả text
-            $illustration = $item->illustration;
+    // Nếu có truyền type thì thêm điều kiện
+    if ($type) {
+        // Optional: validate type để đảm bảo chỉ nhận 'swap' hoặc 'background'
+        if (!in_array($type, ['swap', 'background'])) {
+            return response()->json(['status' => 'error', 'message' => 'Giá trị type không hợp lệ'], 400);
         }
-        // Nếu không phải 2 trường hợp trên → để null
+        $query->where('type', $type);
+    }
 
+    $topics = $query->orderBy('id', 'desc')->get();
+
+    // Map dữ liệu để trả về URL ảnh đầy đủ
+    $topics = $topics->map(function ($item) {
         return [
             'id' => (int) $item->id,
             'name' => $item->name,
-            'type' => $item->type ?? '',
-            'illustration' => $illustration,
-            'is_prompt' => (bool) $item->is_prompt,
+            'topic' => $item->topic,
+            'type' => $item->type,
+            'illustration' => $item->illustration ? $this->getPublicUrl($item->illustration) : null,
+            'prompt' => $item->prompt,
             'status' => $item->status,
         ];
     });
 
-    $uniqueNames = DB::table('ai_topics')
-        ->where('id_admin', $id_admin)
-        ->whereNotNull('name')
-        ->distinct()
-        ->pluck('name')
-        ->sort()
-        ->values();
-
     return response()->json([
         'status' => 'success',
         'data' => $topics,
-        'unique_names' => $uniqueNames,
-        'total_pages' => ceil($total / $limit),
-        'total' => $total
+        'total' => $topics->count()
     ]);
 }
 
@@ -129,18 +93,17 @@ public function index(Request $request)
         $request->validate([
             'id_admin' => 'required|integer',
             'name' => 'required|string|max:255',
-            'type' => 'nullable|string|max:100',
+            'topic' => 'nullable|string|max:255',
+            'type' => 'required|string|max:50', // swap, background
             'status' => 'required|in:Đang hoạt động,Không hoạt động',
-            'illustration' => 'nullable|file|image|mimes:jpeg,jpg,png,gif,webp|max:8048',
-            'prompt' => 'nullable|string|max:2000',
+            'illustration' => 'nullable|image|max:10240', // Max 10MB
+            'prompt' => 'nullable|string', // Text prompt
         ]);
 
-        // Xác định kiểu: ảnh hay prompt
-        $isPrompt = $request->has('prompt') && $request->filled('prompt');
-        $illustrationValue = null;
+        $illustrationPath = null;
 
-        if ($request->hasFile('illustration') && !$isPrompt) {
-            // Lưu ảnh lên Supabase
+        // Nếu có file ảnh gửi lên (kể cả ảnh upload hay ảnh FE tạo rồi gửi dạng blob)
+        if ($request->hasFile('illustration')) {
             $file = $request->file('illustration');
             $filename = 'ai_illustrations/' . uniqid('ai_', true) . '.' . $file->getClientOriginalExtension();
             $contents = file_get_contents($file->getPathname());
@@ -149,98 +112,63 @@ public function index(Request $request)
             $response = $this->uploadToSupabase($filename, $contents, $mimeType);
 
             if ($response->failed()) {
-                \Log::error("Upload AI illustration thất bại", $response->json());
-                return response()->json(['status' => 'error', 'message' => 'Lỗi upload ảnh'], 500);
+                return response()->json(['status' => 'error', 'message' => 'Lỗi upload ảnh lên Storage'], 500);
             }
-
-            $illustrationValue = $filename;
-        } elseif ($isPrompt) {
-            // Lưu prompt text
-            $illustrationValue = $request->prompt;
+            $illustrationPath = $filename;
         }
 
-        $data = [
+        $id = DB::table('ai_topics')->insertGetId([
             'id_admin' => $request->id_admin,
             'name' => $request->name,
+            'topic' => $request->topic,
             'type' => $request->type,
+            'illustration' => $illustrationPath,
+            'prompt' => $request->prompt, // Lưu prompt nếu có
             'status' => $request->status,
-            'is_prompt' => $isPrompt ? 1 : 0,
-            'illustration' => $illustrationValue,
             'created_at' => now(),
             'updated_at' => now(),
-        ];
+        ]);
 
-        $id = DB::table('ai_topics')->insertGetId($data);
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Thêm chủ đề AI thành công!',
-            'id' => $id
-        ], 201);
+        return response()->json(['status' => 'success', 'message' => 'Thêm thành công!', 'id' => $id], 201);
     }
 
     public function update(Request $request, $id)
     {
         $topic = DB::table('ai_topics')->where('id', $id)->first();
+        if (!$topic) return response()->json(['status' => 'error', 'message' => 'Không tìm thấy'], 404);
 
-        if (!$topic) {
-            return response()->json(['status' => 'error', 'message' => 'Không tìm thấy'], 404);
-        }
-
-        $rules = [
+        // Validate
+        $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
-            'type' => 'nullable|string|max:100',
-            'status' => 'sometimes|required|in:Đang hoạt động,Không hoạt động',
-        ];
+            'topic' => 'nullable|string',
+            'type' => 'nullable|string',
+            'status' => 'sometimes|required',
+            'illustration' => 'nullable|image|max:10240',
+            'prompt' => 'nullable|string'
+        ]);
 
-        if ($request->hasFile('illustration')) {
-            $rules['illustration'] = 'image|mimes:jpeg,jpg,png,gif,webp|max:8048';
-        }
-
-        if ($request->has('prompt')) {
-            $rules['prompt'] = 'nullable|string|max:2000';
-        }
-
-        $validator = Validator::make($request->all(), $rules);
-
-        if ($validator->fails()) {
-            return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
-        }
+        if ($validator->fails()) return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
 
         $data = [];
         if ($request->has('name')) $data['name'] = $request->name;
+        if ($request->has('topic')) $data['topic'] = $request->topic;
         if ($request->has('type')) $data['type'] = $request->type;
         if ($request->has('status')) $data['status'] = $request->status;
+        if ($request->has('prompt')) $data['prompt'] = $request->prompt;
 
-        // Xử lý cập nhật illustration
-        if ($request->hasFile('illustration') && !$request->filled('prompt')) {
-            // Xóa ảnh cũ trên Supabase (nếu đang là ảnh)
-            if (!$topic->is_prompt && $topic->illustration && strlen($topic->illustration) < 200) {
+        // Xử lý ảnh mới
+        if ($request->hasFile('illustration')) {
+            // Xóa ảnh cũ
+            if ($topic->illustration) {
                 $this->deleteFromSupabase($topic->illustration);
             }
 
             $file = $request->file('illustration');
             $filename = 'ai_illustrations/' . uniqid('ai_upd_', true) . '.' . $file->getClientOriginalExtension();
             $contents = file_get_contents($file->getPathname());
-            $mimeType = $file->getMimeType();
-
-            $response = $this->uploadToSupabase($filename, $contents, $mimeType);
-
-            if ($response->failed()) {
-                \Log::error("Cập nhật AI illustration thất bại", $response->json());
-                return response()->json(['status' => 'error', 'message' => 'Lỗi upload ảnh mới'], 500);
-            }
-
+            
+            $this->uploadToSupabase($filename, $contents, $file->getMimeType());
             $data['illustration'] = $filename;
-            $data['is_prompt'] = 0;
-        } elseif ($request->filled('prompt')) {
-            // Chuyển sang prompt text
-            if (!$topic->is_prompt && $topic->illustration && strlen($topic->illustration) < 200) {
-                // Xóa ảnh cũ nếu trước đó là ảnh
-                $this->deleteFromSupabase($topic->illustration);
-            }
-            $data['illustration'] = $request->prompt;
-            $data['is_prompt'] = 1;
         }
 
         $data['updated_at'] = now();
@@ -252,18 +180,13 @@ public function index(Request $request)
     public function destroy($id)
     {
         $topic = DB::table('ai_topics')->where('id', $id)->first();
+        if (!$topic) return response()->json(['status' => 'error', 'message' => 'Không tìm thấy'], 404);
 
-        if (!$topic) {
-            return response()->json(['status' => 'error', 'message' => 'Không tìm thấy'], 404);
-        }
-
-        // Xóa ảnh trên Supabase nếu đang là ảnh
-        if (!$topic->is_prompt && $topic->illustration && strlen($topic->illustration) < 200) {
+        if ($topic->illustration) {
             $this->deleteFromSupabase($topic->illustration);
         }
 
         DB::table('ai_topics')->where('id', $id)->delete();
-
         return response()->json(['status' => 'success', 'message' => 'Xóa thành công']);
     }
 }
