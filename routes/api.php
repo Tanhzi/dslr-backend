@@ -43,6 +43,7 @@ Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
 Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
 Route::get('/event-client', [EventController::class, 'show']);
+Route::get('/admin/events/{id_admin}', [EventController::class, 'getByAdminId']);
 Route::get('/background', [DataController::class, 'getEventBackground']);
 Route::get('/prices', [DataController::class, 'getPrices']);
 // Lấy danh sách mã giảm giá
@@ -86,6 +87,7 @@ Route::get('/event-notes', [EventController::class, 'notes']); // get_note.php
 Route::post('/events-admin', [EventController::class, 'store']); // add_event.php
 Route::put('/events-admin/{id}', [EventController::class, 'update']); // update_event4.php
 Route::delete('/events-admin/{id}', [EventController::class, 'destroy']); // delete_event.php
+Route::get('/events-admin/{id_admin}', [EventController::class, 'getByAdminId']); // get_event.php
 
 // Event updates (special fields)
 Route::post('/events-admin/{id}/note', [EventController::class, 'updateNote']); // update_event3.php

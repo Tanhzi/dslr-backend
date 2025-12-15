@@ -21,7 +21,7 @@ public function getOrders(Request $request): JsonResponse
     $orders = Pay::where('id_admin', $idAdmin)
         ->whereNotNull('id_qr')
         ->select('id', 'date as time', 'discount_code', 'id_frame as frame_id', 'id_qr as qr_id')
-        ->orderBy('date', 'desc')
+        ->orderBy('date', 'asc')
         ->get();
 
     return response()->json($orders);

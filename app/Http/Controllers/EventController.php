@@ -45,7 +45,29 @@ class EventController extends Controller
         ])->delete($url);
     }
 
-    // ===== CÁC HÀM API KHÁC GIỮ NGUYÊN =====
+
+
+    public function getByAdminId(Request $request, $id_admin)
+    {
+        try {
+            $events = Event::where('id_admin', $id_admin)
+                ->select('id', 'name')
+                ->orderBy('id', 'asc')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $events
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error getting events by admin ID: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch events',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
     public function index(Request $request)
     {

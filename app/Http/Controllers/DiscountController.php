@@ -182,21 +182,21 @@ class DiscountController extends Controller
         return response()->json(['status' => 'success', 'message' => 'Cập nhật thành công']);
     }
 
+public function index1(Request $request)
+{
+    $adminId = $request->query('admin_id');
 
-    public function index1(Request $request)
-    {
-        $adminId = $request->query('admin_id');
-
-        if (!$adminId) {
-            return response()->json(['error' => 'Thiếu admin_id'], 400);
-        }
-
-        $discounts = Discount::where('id_admin', $adminId)
-            ->select('id', 'code', 'value', 'quantity', 'count_quantity', 'startdate', 'enddate')
-            ->get();
-
-        return response()->json($discounts);
+    if (!$adminId) {
+        return response()->json(['error' => 'Thiếu admin_id'], 400);
     }
+
+    $discounts = Discount::where('id_admin', $adminId)
+        ->select('id', 'code', 'value', 'quantity', 'count_quantity', 'startdate', 'enddate')
+        ->orderBy('startdate', 'asc') // Sắp xếp theo ngày bắt đầu tăng dần
+        ->get();
+
+    return response()->json($discounts);
+}
 
     // POST /discounts
     public function store(Request $request)
