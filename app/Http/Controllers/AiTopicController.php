@@ -46,20 +46,24 @@ class AiTopicController extends Controller
 public function index(Request $request)
 {
     $id_admin = $request->query('id_admin');
-    $type = $request->query('type'); // 'swap' hoặc 'background'
+    $id_topic = $request->query('id_topic'); // ← THÊM
+    $type = $request->query('type');
 
     if (!$id_admin) {
         return response()->json(['status' => 'error', 'message' => 'Thiếu id_admin'], 400);
     }
 
-    // Xây dựng truy vấn cơ bản
     $query = DB::table('ai_topics')
         ->where('id_admin', $id_admin)
-        ->select('id', 'name', 'topic', 'type', 'illustration', 'prompt', 'status');
+        ->select('id', 'id_topic', 'name', 'topic', 'type', 'illustration', 'prompt', 'status'); // ← Đảm bảo có id_topic
 
-    // Nếu có truyền type thì thêm điều kiện
+    // Lọc theo id_topic nếu có
+    if ($id_topic !== null && $id_topic !== '') {
+        $query->where('id_topic', $id_topic);
+    }
+
+    // Lọc theo type nếu có
     if ($type) {
-        // Optional: validate type để đảm bảo chỉ nhận 'swap' hoặc 'background'
         if (!in_array($type, ['swap', 'background'])) {
             return response()->json(['status' => 'error', 'message' => 'Giá trị type không hợp lệ'], 400);
         }
@@ -68,10 +72,10 @@ public function index(Request $request)
 
     $topics = $query->orderBy('id', 'desc')->get();
 
-    // Map dữ liệu để trả về URL ảnh đầy đủ
     $topics = $topics->map(function ($item) {
         return [
             'id' => (int) $item->id,
+            'id_topic' => $item->id_topic,
             'name' => $item->name,
             'topic' => $item->topic,
             'type' => $item->type,
@@ -90,15 +94,16 @@ public function index(Request $request)
 
     public function store(Request $request)
     {
-        $request->validate([
-            'id_admin' => 'required|integer',
-            'name' => 'required|string|max:255',
-            'topic' => 'nullable|string|max:255',
-            'type' => 'required|string|max:50', // swap, background
-            'status' => 'required|in:Đang hoạt động,Không hoạt động',
-            'illustration' => 'nullable|image|max:10240', // Max 10MB
-            'prompt' => 'nullable|string', // Text prompt
-        ]);
+    $request->validate([
+        'id_admin' => 'required|integer',
+        'id_topic' => 'nullable|integer', // Kiểm tra tồn tại trong bảng events
+        'name' => 'required|string|max:255',
+        'topic' => 'nullable|string|max:255',
+        'type' => 'required|string|max:50',
+        'status' => 'required|in:Đang hoạt động,Không hoạt động',
+        'illustration' => 'nullable|image|max:10240',
+        'prompt' => 'nullable|string',
+    ]);
 
         $illustrationPath = null;
 
@@ -117,44 +122,46 @@ public function index(Request $request)
             $illustrationPath = $filename;
         }
 
-        $id = DB::table('ai_topics')->insertGetId([
-            'id_admin' => $request->id_admin,
-            'name' => $request->name,
-            'topic' => $request->topic,
-            'type' => $request->type,
-            'illustration' => $illustrationPath,
-            'prompt' => $request->prompt, // Lưu prompt nếu có
-            'status' => $request->status,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+   $id = DB::table('ai_topics')->insertGetId([
+        'id_admin' => $request->id_admin,
+        'id_topic' => $request->id_topic, // ← Thêm dòng này
+        'name' => $request->name,
+        'topic' => $request->topic,
+        'type' => $request->type,
+        'illustration' => $illustrationPath,
+        'prompt' => $request->prompt,
+        'status' => $request->status,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 
-        return response()->json(['status' => 'success', 'message' => 'Thêm thành công!', 'id' => $id], 201);
+    return response()->json(['status' => 'success', 'message' => 'Thêm thành công!', 'id' => $id], 201);
     }
 
     public function update(Request $request, $id)
     {
-        $topic = DB::table('ai_topics')->where('id', $id)->first();
-        if (!$topic) return response()->json(['status' => 'error', 'message' => 'Không tìm thấy'], 404);
+ $topic = DB::table('ai_topics')->where('id', $id)->first();
+    if (!$topic) return response()->json(['status' => 'error', 'message' => 'Không tìm thấy'], 404);
 
-        // Validate
-        $validator = Validator::make($request->all(), [
-            'name' => 'sometimes|required|string|max:255',
-            'topic' => 'nullable|string',
-            'type' => 'nullable|string',
-            'status' => 'sometimes|required',
-            'illustration' => 'nullable|image|max:10240',
-            'prompt' => 'nullable|string'
-        ]);
+    $validator = Validator::make($request->all(), [
+        'id_topic' => 'nullable|integer',
+        'name' => 'sometimes|required|string|max:255',
+        'topic' => 'nullable|string',
+        'type' => 'nullable|string',
+        'status' => 'sometimes|required',
+        'illustration' => 'nullable|image|max:10240',
+        'prompt' => 'nullable|string'
+    ]);
 
-        if ($validator->fails()) return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
+    if ($validator->fails()) return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
 
-        $data = [];
-        if ($request->has('name')) $data['name'] = $request->name;
-        if ($request->has('topic')) $data['topic'] = $request->topic;
-        if ($request->has('type')) $data['type'] = $request->type;
-        if ($request->has('status')) $data['status'] = $request->status;
-        if ($request->has('prompt')) $data['prompt'] = $request->prompt;
+    $data = [];
+    if ($request->has('name')) $data['name'] = $request->name;
+    if ($request->has('topic')) $data['topic'] = $request->topic;
+    if ($request->has('type')) $data['type'] = $request->type;
+    if ($request->has('status')) $data['status'] = $request->status;
+    if ($request->has('prompt')) $data['prompt'] = $request->prompt;
+    if ($request->has('id_topic')) $data['id_topic'] = $request->id_topic; // ← Thêm dòng này
 
         // Xử lý ảnh mới
         if ($request->hasFile('illustration')) {
@@ -171,10 +178,10 @@ public function index(Request $request)
             $data['illustration'] = $filename;
         }
 
-        $data['updated_at'] = now();
-        DB::table('ai_topics')->where('id', $id)->update($data);
+ $data['updated_at'] = now();
+    DB::table('ai_topics')->where('id', $id)->update($data);
 
-        return response()->json(['status' => 'success', 'message' => 'Cập nhật thành công!']);
+    return response()->json(['status' => 'success', 'message' => 'Cập nhật thành công!']);
     }
 
     public function destroy($id)

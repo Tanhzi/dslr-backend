@@ -22,7 +22,7 @@ class ContentController extends Controller
 
         $query = DB::table('content_chat')
             ->where('id_admin', $id_admin)
-            ->select('id', 'title', 'content', 'created_at');
+            ->select('id', 'title', 'content', 'created_at', 'updated_at');
 
         // Tìm kiếm
         if ($search) {
@@ -74,6 +74,7 @@ class ContentController extends Controller
             'title' => $request->input('title'),
             'content' => $request->input('content'),
             'created_at' => now(),
+            'updated_at' => now(),
         ];
 
         $id = DB::table('content_chat')->insertGetId($data);
@@ -105,7 +106,7 @@ class ContentController extends Controller
         $data = [];
         if ($request->has('title')) $data['title'] = $request->input('title');
         if ($request->has('content')) $data['content'] = $request->input('content');
-
+        $data['updated_at'] = now();
         DB::table('content_chat')->where('id', $id)->update($data);
 
         return response()->json(['status' => 'success', 'message' => 'Cập nhật thành công!']);

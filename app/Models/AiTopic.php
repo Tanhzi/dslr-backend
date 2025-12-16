@@ -8,5 +8,5 @@ class AiTopic extends Model
 {
     protected $table = 'ai_topics';
     public $timestamps = true;
-    protected $fillable = ['id_admin', 'name','topic','type', 'illustration', 'prompt','status'];
+    protected $fillable = ['id_admin', 'name','topic','id_topic','type', 'illustration', 'prompt','status'];
 }
