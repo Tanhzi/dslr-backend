@@ -18,7 +18,7 @@ public function generate(Request $request)
     try {
         $client = new \GuzzleHttp\Client();
 
-        $response = $client->post("http://127.0.0.1:5000/admin-generate-image", [
+        $response = $client->post("http://localhost:5000/admin-generate-image", [
             'json' => ['prompt' => $prompt], // 👈 GỬI DƯỚI DẠNG JSON
             'timeout' => 60,
         ]);
@@ -96,7 +96,7 @@ public function generate(Request $request)
                 }
             }
 
-            $response = $client->post("http://127.0.0.1:5000/{$endpoint}", [
+            $response = $client->post("http://localhost:5000/{$endpoint}", [
                 'multipart' => $multipart,
                 'timeout' => 60,
             ]);

@@ -17,7 +17,7 @@ class ChatbotController extends Controller
         }
 
         try {
-            $response = Http::timeout(30)->post('http://127.0.0.1:5001/chat', [
+            $response = Http::timeout(30)->post('http://localhost:5001/chat', [
                 'question' => $question
             ]);
 
