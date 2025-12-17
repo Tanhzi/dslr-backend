@@ -12,7 +12,6 @@ use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\FrameController;
 use App\Http\Controllers\CameraController;
 use App\Http\Controllers\MediaController;
-use App\Http\Controllers\ChatbotController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\PayController;
@@ -36,8 +35,6 @@ use App\Http\Controllers\AiTopicController;
 // contentchat
 use App\Http\Controllers\ContentController;
 
-// AI Image
-use App\Http\Controllers\AiImageController;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
@@ -232,15 +229,3 @@ Route::prefix('content-chat')->group(function () {
     Route::delete('/{id}', [ContentController::class, 'destroy']);
 });
 
-
-
-// AI Image APIs (công khai)
-Route::post('/admin-generate-image', [AiImageController::class, 'generate']);
-Route::post('/ai/anime-style', [AiImageController::class, 'animeStyle']);
-Route::post('/ai/enhance', [AiImageController::class, 'enhance']);
-Route::post('/ai/user-generate-target', [AiImageController::class, 'userGenerateTarget']);
-Route::post('/ai/face-swap', [AiImageController::class, 'faceSwap']);
-Route::post('/ai/background-ai', [AiImageController::class, 'backgroundAi']);
-
-// Chatbot (công khai)
-Route::post('/chat', [ChatbotController::class, 'handleChat']);
