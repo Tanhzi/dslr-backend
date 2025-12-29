@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\Event;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -74,73 +75,86 @@ public function index(Request $request)
 }
 
     // POST: Thêm người dùng mới
-    public function store(Request $request)
-    {
-        $request->validate([
-            'username' => 'required|string|max:255|unique:users,username',
-            'email' => 'required|email|max:255|unique:users,email',
-            'password' => 'required|string|min:6',
-            'id_topic' => 'nullable|integer',
-            'id_admin' => 'required|integer',
-            'role' => 'required|integer'
-        ]);
+public function store(Request $request)
+{
+    $request->validate([
+        'username' => 'required|string|max:255|unique:users,username',
+        'email' => 'required|email|max:255|unique:users,email',
+        'password' => 'required|string|min:6',
+        'id_topic' => 'nullable|integer',
+        'id_admin' => 'required|integer',
+        'role' => 'required|integer|in:0,1',
+    ]);
 
-        $user = User::create([
-            'username' => $request->username,
-            'email' => $request->email,
-            'password' => $request->password, // mutator tự hash
-            'id_topic' => $request->id_topic,
-            'id_admin' => $request->id_admin,
-            'role' => $request->role,
-        ]);
+    $user = User::create([
+        'username' => $request->username,
+        'email' => $request->email,
+        'password' => $request->password,
+        'id_topic' => $request->id_topic,
+        'id_admin' => $request->id_admin,
+        'role' => $request->role,
+    ]);
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Thêm người dùng thành công!',
-            'data' => $user
-        ], 201);
+    // Đồng bộ vào event nếu có id_topic
+    if ($request->filled('id_topic')) {
+        $this->syncUserToEvent($user->id, null, $request->id_topic, $request->id_admin);
     }
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Thêm người dùng thành công!',
+        'data' => $user
+    ], 201);
+}
 
     // PUT: Cập nhật (chỉ cần sửa 1 trường cũng được)
-    public function update(Request $request, $id)
-    {
-        $request->validate([
-            'username' => ['required', 'string', 'max:255', Rule::unique('users')->ignore($id)],
-            'email' => ['required', 'email', 'max:255', Rule::unique('users')->ignore($id)],
-            'id_topic' => 'nullable|integer',
-            'password' => 'nullable|string|min:6',
-            'id_admin' => 'required|integer',
-            'role' => 'required|integer'
-        ]);
+public function update(Request $request, $id)
+{
+    $request->validate([
+        'username' => ['required', 'string', 'max:255', Rule::unique('users')->ignore($id)],
+        'email' => ['required', 'email', 'max:255', Rule::unique('users')->ignore($id)],
+        'id_topic' => 'nullable|integer',
+        'password' => 'nullable|string|min:6',
+        'id_admin' => 'required|integer',
+        'role' => 'required|integer|in:0,1',
+    ]);
 
-        $user = User::where('id', $id)
-                    ->where('id_admin', $request->id_admin)
-                    ->first();
+    $user = User::where('id', $id)
+                ->where('id_admin', $request->id_admin)
+                ->first();
 
-        if (!$user) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Không tìm thấy người dùng hoặc bạn không có quyền!'
-            ], 404);
-        }
-
-        $user->username = $request->username;
-        $user->email = $request->email;
-        $user->id_topic = $request->id_topic;
-        $user->id_admin = $request->id_admin;
-        $user->role = $request->role;
-
-        if ($request->filled('password')) {
-            $user->password = $request->password; // mutator hash
-        }
-
-        $user->save();
-
+    if (!$user) {
         return response()->json([
-            'status' => 'success',
-            'message' => 'Cập nhật thành công!'
-        ]);
+            'status' => 'error',
+            'message' => 'Không tìm thấy người dùng hoặc bạn không có quyền!'
+        ], 404);
     }
+
+    $oldTopicId = $user->id_topic;
+    $newTopicId = $request->id_topic;
+
+    $user->username = $request->username;
+    $user->email = $request->email;
+    $user->id_topic = $newTopicId; // ⚠️ Lưu ý: cập nhật trước khi sync
+    $user->id_admin = $request->id_admin;
+    $user->role = $request->role;
+
+    if ($request->filled('password')) {
+        $user->password = $request->password;
+    }
+
+    $user->save();
+
+    // Đồng bộ lại event nếu id_topic thay đổi
+    if ($oldTopicId != $newTopicId) {
+        $this->syncUserToEvent($user->id, $oldTopicId, $newTopicId, $request->id_admin);
+    }
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Cập nhật thành công!'
+    ]);
+}
 
     // DELETE: Xóa
     public function destroy(Request $request, $id)
@@ -165,4 +179,39 @@ public function index(Request $request)
             'message' => 'Xóa thành công!'
         ]);
     }
+
+    // Trong class AdminController
+
+protected function syncUserToEvent($userId, $oldTopicId, $newTopicId, $id_admin)
+{
+    // Xử lý event cũ: xóa user khỏi apply
+    if ($oldTopicId && $oldTopicId != $newTopicId) {
+        Event::where('id', $oldTopicId)
+            ->where('id_admin', $id_admin)
+            ->chunkById(100, function ($events) use ($userId) {
+                foreach ($events as $event) {
+                    $apply = is_array($event->apply) ? $event->apply : (json_decode($event->apply, true) ?? []);
+                    $apply = array_values(array_diff($apply, [$userId]));
+                    $event->apply = $apply;
+                    $event->save();
+                }
+            });
+    }
+
+    // Xử lý event mới: thêm user vào apply
+    if ($newTopicId && $newTopicId != $oldTopicId) {
+        Event::where('id', $newTopicId)
+            ->where('id_admin', $id_admin)
+            ->chunkById(100, function ($events) use ($userId) {
+                foreach ($events as $event) {
+                    $apply = is_array($event->apply) ? $event->apply : (json_decode($event->apply, true) ?? []);
+                    if (!in_array($userId, $apply)) {
+                        $apply[] = $userId;
+                    }
+                    $event->apply = $apply;
+                    $event->save();
+                }
+            });
+    }
+}
 }

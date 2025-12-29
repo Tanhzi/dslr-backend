@@ -112,6 +112,7 @@ Route::get('get-orders', [PayController::class, 'getOrders']); // Lấy danh sá
 Route::get('/frame-image', [TemplateController::class, 'getFrameImage']);
 Route::get('/top-frames', [TemplateController::class, 'getTopFramesByAdmin']);
 Route::get('/qr-image', [MediaController::class, 'getQrBySession']);
+Route::get('get-composite-by-session', [MediaController::class, 'getCompositeBySession']);
 
 // Revenue
 Route::get('/summary', [RevenueController::class, 'summary']);
@@ -228,4 +229,5 @@ Route::prefix('content-chat')->group(function () {
     Route::put('/{id}', [ContentController::class, 'update']);
     Route::delete('/{id}', [ContentController::class, 'destroy']);
 });
+
 

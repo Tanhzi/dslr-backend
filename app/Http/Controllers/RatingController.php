@@ -17,7 +17,7 @@ class RatingController extends Controller
             'photo' => 'required|integer|min:0|max:5',
             'service' => 'required|integer|min:0|max:5',
             'comment' => 'nullable|string|max:2000',
-            'id_admin' => 'nullable|integer|exists:users,id',
+            'id_admin' => 'required|integer|exists:users,id',
         ]);
 
         try {
@@ -30,7 +30,7 @@ class RatingController extends Controller
                 'photo' => $validated['photo'],
                 'service' => $validated['service'],
                 'comment' => $validated['comment'] ?? null,
-                'id_admin' => $validated['id_admin'] ?? null,
+                'id_admin' => $validated['id_admin'],
             ]);
 
             DB::commit();
@@ -52,42 +52,55 @@ class RatingController extends Controller
     }
 
     // app/Http/Controllers/RatingController.php
-    public function index(Request $request)
-    {
-        $request->validate([
-            'page' => 'integer|min:1',
-            'search' => 'nullable|string|max:255',
-            'limit' => 'integer|min:1|max:100'
-        ]);
+public function index(Request $request)
+{
+    $request->validate([
+        'page' => 'integer|min:1',
+        'search' => 'nullable|string|max:255',
+        'limit' => 'integer|min:1|max:100',
+        'id_admin' => 'required|integer|exists:users,id', // ← Thêm validation
+    ]);
 
-        $query = Rating::query();
+    $id_admin = $request->input('id_admin');
 
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('comment', 'like', "%{$search}%");
-            });
-        }
+    $query = Rating::where('id_admin', $id_admin); // ← Lọc theo id_admin
 
-        $limit = $request->limit ?? 10;
-        $page = $request->page ?? 1;
-        $total = $query->count();
-
-        $ratings = $query->orderBy('created_at', 'desc')
-            ->offset(($page - 1) * $limit)
-            ->limit($limit)
-            ->get();
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $ratings,
-            'total' => $total,
-            'page' => (int) $page,
-            'limit' => (int) $limit,
-            'total_pages' => ceil($total / $limit)
-        ]);
+    if ($request->filled('search')) {
+        $search = $request->search;
+        $query->where(function ($q) use ($search) {
+            $q->where('name', 'like', "%{$search}%")
+              ->orWhere('comment', 'like', "%{$search}%");
+        });
     }
+
+    // Thêm filter nếu có
+    if ($request->filled('filter')) {
+        $filter = $request->filter;
+        if ($filter === 'today') {
+            $query->whereDate('created_at', today());
+        } elseif ($filter === 'month') {
+            $query->whereBetween('created_at', [now()->startOfMonth(), now()]);
+        }
+    }
+
+    $limit = $request->limit ?? 10;
+    $page = $request->page ?? 1;
+    $total = $query->count();
+
+    $ratings = $query->orderBy('created_at', 'desc')
+        ->offset(($page - 1) * $limit)
+        ->limit($limit)
+        ->get();
+
+    return response()->json([
+        'status' => 'success',
+        'data' => $ratings,
+        'total' => $total,
+        'page' => (int) $page,
+        'limit' => (int) $limit,
+        'total_pages' => ceil($total / $limit)
+    ]);
+}
 
     public function destroy($id)
     {

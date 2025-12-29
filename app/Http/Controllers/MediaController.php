@@ -47,13 +47,13 @@ class MediaController extends Controller
     {
         $request->validate([
             'files' => 'required|array|min:1',
-            'session_id' => 'required|string',
+            'id_qr' => 'required|string',
             'id_admin' => 'nullable|integer',
             'download_link' => 'nullable|url',
         ]);
 
         $files = $request->input('files');
-        $sessionId = $request->session_id;
+        $idQr = $request->id_qr;
         $idAdmin = $request->id_admin;
         $downloadLink = $request->download_link;
 
@@ -84,7 +84,7 @@ class MediaController extends Controller
             }
 
             // Tạo tên file
-            $fileName = $sessionId . '_' . $fileType . '_' . Str::random(10) . '.' . $extension;
+            $fileName = $idQr . '_' . $fileType . '_' . Str::random(10) . '.' . $extension;
             $relativePath = 'media/' . $fileName;
 
             // Upload lên Supabase
@@ -102,7 +102,7 @@ class MediaController extends Controller
                 'file_path' => $relativePath,
                 'file_type' => $fileType,
                 'id_admin' => $idAdmin,
-                'session_id' => $sessionId,
+                'id_qr' => $idQr,
                 'link' => $downloadLink,
                 'created_at' => now(),
             ]);
@@ -119,17 +119,17 @@ class MediaController extends Controller
             'message' => 'Upload và lưu database thành công.',
             'results' => $results,
             'errors' => $errors,
-            'session_id' => $sessionId,
+            'id_qr' => $idQr,
             'download_link' => $downloadLink,
         ]);
     }
 
-    // Lấy media theo session_id
+    // Lấy media theo id_qr
     public function showBySession(Request $request)
     {
-        $request->validate(['session_id' => 'required|string']);
+        $request->validate(['id_qr' => 'required|string']);
 
-        $mediaItems = Media::where('session_id', $request->session_id)
+        $mediaItems = Media::where('id_qr', $request->id_qr)
             ->get()
             ->map(function ($item) {
                 return [
@@ -143,23 +143,23 @@ class MediaController extends Controller
 
     public function showDownloadPage(Request $request)
     {
-        $sessionId = $request->query('session_id');
-        if (!$sessionId) {
-            return response('Lỗi: Không tìm thấy ID phiên chụp.', 400)
+        $idQr = $request->query('id_qr');
+        if (!$idQr) {
+            return response('Lỗi: Không tìm thấy ID QR.', 400)
                 ->header('Content-Type', 'text/html; charset=utf-8');
         }
-        return view('download', ['sessionId' => $sessionId]);
+        return view('download', ['idQr' => $idQr]);
     }
 
     // Lấy QR và link
     public function getQrBySession(Request $request)
     {
-        $sessionId = $request->query('session_id');
-        if (!$sessionId) {
-            return response()->json(['error' => 'Thiếu session_id'], 400);
+        $idQr = $request->query('id_qr');
+        if (!$idQr) {
+            return response()->json(['error' => 'Thiếu id_qr'], 400);
         }
 
-        $qrRecord = Media::where('session_id', $sessionId)
+        $qrRecord = Media::where('id_qr', $idQr)
             ->where('file_type', 'qr')
             ->first();
 
@@ -173,19 +173,39 @@ class MediaController extends Controller
             'qr_link' => $qrRecord->link ?? ''
         ]);
     }
+    public function getCompositeBySession(Request $request)
+    {
+        $idQr = $request->query('id_qr');
+        if (!$idQr) {
+            return response()->json(['error' => 'Thiếu id_qr'], 400);
+        }
+
+        $compositeRecord = Media::where('id_qr', $idQr)
+            ->where('file_type', 'composite') // Lọc theo loại file composite
+            ->first();
+
+        if (!$compositeRecord) {
+            return response()->json(['error' => 'Không tìm thấy ảnh khách'], 404);
+        }
+
+        return response()->json([
+            'customer_image_url' => $this->getPublicUrl($compositeRecord->file_path),
+            // Thêm các field khác nếu cần (link, metadata...)
+        ]);
+    }
 
     // Gửi QR qua email
     public function sendQrEmail(Request $request)
     {
         $request->validate([
             'email' => 'required|email',
-            'session_id' => 'required|string',
+            'id_qr' => 'required|string',
         ]);
 
         $email = $request->email;
-        $sessionId = $request->session_id;
+        $idQr = $request->id_qr;
 
-        $qrMedia = Media::where('session_id', $sessionId)
+        $qrMedia = Media::where('id_qr', $idQr)
             ->where('file_type', 'qr')
             ->first();
 
@@ -207,7 +227,7 @@ class MediaController extends Controller
         }
 
         $qrBase64 = base64_encode($qrResponse->body());
-        $downloadLink = $qrMedia->link ?? url("/download?session_id={$sessionId}");
+        $downloadLink = $qrMedia->link ?? url("/download?id_qr={$idQr}");
 
         $html = "
             <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f9f9f9; border-radius: 10px;'>
@@ -271,7 +291,7 @@ class MediaController extends Controller
     {
         $validated = $request->validate([
             'email' => 'required|email',
-            'session_id' => 'required|string',
+            'id_qr' => 'required|string',
             'images' => 'required|array|min:1',
             'images.*' => 'string',
         ], [
@@ -280,7 +300,7 @@ class MediaController extends Controller
         ]);
 
         $email = $request->email;
-        $sessionId = $request->session_id;
+        $idQr = $request->id_qr;
         $imagesBase64 = $request->images;
 
         $attachments = [];

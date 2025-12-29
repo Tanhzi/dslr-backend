@@ -347,18 +347,18 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const params = new URLSearchParams(window.location.search);
-            const sessionId = params.get('session_id');
+            const idQr = params.get('id_qr');
             const contentDiv = document.getElementById('content');
 
-            if (!sessionId) {
-                contentDiv.innerHTML = '<p class="error-message">Lỗi: Không tìm thấy ID của phiên chụp.</p>';
+            if (!idQr) {
+                contentDiv.innerHTML = '<p class="error-message">Lỗi: Không tìm thấy ID QR.</p>';
                 return;
             }
 
             // Giữ nguyên logic gọi API như cũ
             const currentPath = window.location.pathname;
             const apiPath = currentPath.substring(0, currentPath.lastIndexOf('/'));
-            const apiUrl = `{{ url('/api/media/session') }}?session_id={{ $sessionId }}`;
+            const apiUrl = `{{ url('/api/media/session') }}?id_qr={{ $idQr }}`;
 
             fetch(apiUrl)
                 .then(response => response.json())
