@@ -30,5 +30,7 @@ RUN chown -R www-data:www-data /var/www
 # Expose port
 EXPOSE 8000
 
-# Start server
-CMD ["php", "-S", "0.0.0.0:8000", "public/index.php"]
+# Start server — tôn trọng $PORT của Render (shell form để mở rộng ${PORT}),
+# tăng giới hạn upload (ảnh base64 + multipart frame/sticker) và timeout
+CMD php -d upload_max_filesize=64M -d post_max_size=128M -d max_execution_time=120 \
+    -S 0.0.0.0:${PORT:-8000} -t public public/index.php

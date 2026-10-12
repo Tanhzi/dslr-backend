@@ -3,6 +3,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Cache;
 
 class ContentController extends Controller
 {
@@ -44,13 +45,15 @@ class ContentController extends Controller
             ->limit($limit)
             ->get();
 
-        $uniqueTitles = DB::table('content_chat')
-            ->where('id_admin', $id_admin)
-            ->whereNotNull('title')
-            ->distinct()
-            ->pluck('title')
-            ->sort()
-            ->values();
+        $uniqueTitles = Cache::remember('content_titles_' . $id_admin, 600, function () use ($id_admin) {
+            return DB::table('content_chat')
+                ->where('id_admin', $id_admin)
+                ->whereNotNull('title')
+                ->distinct()
+                ->pluck('title')
+                ->sort()
+                ->values();
+        });
 
         return response()->json([
             'status' => 'success',
@@ -78,6 +81,9 @@ class ContentController extends Controller
         ];
 
         $id = DB::table('content_chat')->insertGetId($data);
+
+        Cache::forget('content_titles_' . $request->input('id_admin'));
+        Cache::forget('chat_context_' . $request->input('id_admin'));
 
         return response()->json([
             'status' => 'success',
@@ -109,6 +115,9 @@ class ContentController extends Controller
         $data['updated_at'] = now();
         DB::table('content_chat')->where('id', $id)->update($data);
 
+        Cache::forget('content_titles_' . $content->id_admin);
+        Cache::forget('chat_context_' . $content->id_admin);
+
         return response()->json(['status' => 'success', 'message' => 'Cập nhật thành công!']);
     }
 
@@ -121,6 +130,9 @@ class ContentController extends Controller
         }
 
         DB::table('content_chat')->where('id', $id)->delete();
+
+        Cache::forget('content_titles_' . $content->id_admin);
+        Cache::forget('chat_context_' . $content->id_admin);
 
         return response()->json(['status' => 'success', 'message' => 'Xóa thành công']);
     }

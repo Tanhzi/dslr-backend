@@ -1,24 +1,41 @@
-*.log
-.DS_Store
+# Environment — GIỮ .env.example
 .env
-.env.backup
-.env.production
-.phpactor.json
+.env.*
+!.env.example
+
+# Dependencies
+/node_modules
+/auth.json
+
+# Build assets (Vite)
+/public/build
+/public/hot
+/public/storage
+
+# Laravel runtime
+/vendor
+/storage/*.key
+/storage/pail
+/storage/logs/*
+!/storage/logs/.gitignore
+Homestead.json
+Homestead.yaml
+
+# Cache & test
 .phpunit.result.cache
+/.phpunit.cache
+*.log
+
+# IDE & tooling
 /.fleet
 /.idea
 /.nova
 /.phpunit.cache
 /.vscode
 /.zed
-/auth.json
-/node_modules
-/public/build
-/public/hot
-/public/storage
-/storage/*.key
-/storage/pail
-/vendor
-Homestead.json
-Homestead.yaml
+/.phpactor.json
+
+# OS
+.DS_Store
 Thumbs.db
+desktop.ini

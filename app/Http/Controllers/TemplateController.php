@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class TemplateController extends Controller
 {
@@ -123,6 +124,71 @@ public function getTopFramesByAdmin(Request $request)
     return response()->json([
         'status' => 'success',
         'data' => $result
+    ]);
+}
+
+/**
+ * Lấy danh sách khung ảnh theo id_admin, id_topic và cuts
+ */
+public function getFramesByFilters(Request $request)
+{
+    $id_admin = $request->query('id_admin');
+    $id_topic = $request->query('id_topic');
+    $cuts = $request->query('cuts');
+    $page = (int) $request->query('page', 1);
+    $limit = (int) $request->query('limit', 50);
+
+    if (!$id_admin) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Thiếu tham số bắt buộc: id_admin'
+        ], 400);
+    }
+
+    $cacheKey = 'frames_filters_' . $id_admin . '_' . ($id_topic ?: '0') . '_' . ($cuts ?: 'all') . '_p' . $page . '_l' . $limit;
+    $result = Cache::remember($cacheKey, 300, function () use ($id_admin, $id_topic, $cuts, $page, $limit) {
+        $query = DB::table('template')
+            ->leftJoin('event', 'template.id_topic', '=', 'event.id')
+            ->where('template.id_admin', $id_admin)
+            ->select(
+                'template.id',
+                'template.frame',
+                'template.type',
+                'template.cuts',
+                'template.id_topic',
+                'event.name as event_name'
+            );
+
+        if ($id_topic) {
+            $query->where('template.id_topic', $id_topic);
+        }
+
+        if ($cuts && $cuts !== 'all') {
+            $query->where('template.cuts', $cuts);
+        }
+
+        $total = $query->count();
+        $frames = $query->orderBy('template.id')->offset(($page - 1) * $limit)->limit($limit)->get();
+
+        $data = $frames->map(function ($item) {
+            return [
+                'id' => (int) $item->id,
+                'frame' => $item->frame ? $this->getPublicUrl($item->frame) : null,
+                'type' => $item->type ?? '',
+                'cuts' => $item->cuts ? (string) $item->cuts : '',
+                'id_topic' => $item->id_topic ? (int) $item->id_topic : null,
+                'event_name' => $item->event_name ?? 'Chưa có sự kiện',
+            ];
+        });
+
+        return ['data' => $data, 'total' => $total, 'total_pages' => ceil($total / $limit)];
+    });
+
+    return response()->json([
+        'status' => 'success',
+        'data' => $result['data'],
+        'total' => $result['total'],
+        'total_pages' => $result['total_pages'],
     ]);
 }
 }

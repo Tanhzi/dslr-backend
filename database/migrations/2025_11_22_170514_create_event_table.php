@@ -16,8 +16,8 @@ public function up()
         $table->integer('id_admin')->nullable();
         $table->string('name', 200)->nullable();
         $table->date('date')->nullable();
-        $table->binary('background')->nullable();     // BYTEA
-        $table->binary('logo')->nullable();          // BYTEA
+        $table->string('background')->nullable();      // path/URL Supabase (trước đây là BYTEA)
+        $table->string('logo')->nullable();            // path/URL Supabase (trước đây là BYTEA)
         $table->json('apply')->nullable();           // JSON hoặc jsonb()
         $table->string('note1', 500)->nullable();
         $table->string('note2', 500)->nullable();

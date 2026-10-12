@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\HandleCors;
+use Illuminate\Validation\ValidationException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -21,6 +22,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: '*');
         $middleware->alias([
             'cors' => \Illuminate\Http\Middleware\HandleCors::class,
+            'jwt' => \App\Http\Middleware\JwtMiddleware::class,
+            'role' => \App\Http\Middleware\EnsureRole::class,
         ]);
         
         // ✅ Tắt middleware redirect về home cho API
@@ -29,13 +32,29 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions) {
         $exceptions->render(function (Throwable $e, $request) {
             if ($request->is('api/*')) {
+                // Validation lỗi phải trả 422 kèm errors theo từng field (không phải 500)
+                if ($e instanceof ValidationException) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => collect($e->errors())->flatten()->first() ?? 'Dữ liệu không hợp lệ.',
+                        'errors' => $e->errors(),
+                    ], 422);
+                }
+
                 $statusCode = method_exists($e, 'getStatusCode') 
                     ? $e->getStatusCode() 
                     : 500;
 
+                // Ẩn chi tiết lỗi nội bộ (SQL, path...) khi tắt debug
+                $message = config('app.debug')
+                    ? $e->getMessage()
+                    : ($statusCode >= 500
+                        ? 'Lỗi máy chủ. Vui lòng thử lại sau.'
+                        : $e->getMessage());
+
                 return response()->json([
                     'status' => 'error',
-                    'message' => $e->getMessage(),
+                    'message' => $message,
                     'trace' => config('app.debug') ? $e->getTraceAsString() : null,
                 ], $statusCode);
             }

@@ -96,7 +96,8 @@ return [
     'prefix' => '',
     'prefix_indexes' => true,
     'search_path' => 'public',
-    'sslmode' => 'require',  // ← Dòng này rất quan trọng!
+    // Supabase/Render bắt buộc 'require'; postgres local đổi DB_SSLMODE=require một cách tường minh
+    'sslmode' => env('DB_SSLMODE', 'require'),
 ],
 
         'sqlsrv' => [

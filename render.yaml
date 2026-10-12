@@ -1,0 +1,54 @@
+services:
+  - type: web
+    name: sweetlens-backend
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /up
+    autoDeploy: true
+    preDeployCommand: php artisan migrate --force
+    envVars:
+      - key: APP_NAME
+        value: SweetLens
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_URL
+        sync: false
+      - key: APP_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_COOKIE_SAMESITE
+        value: "None"
+      - key: JWT_TTL
+        value: "60"
+      - key: JWT_REFRESH_GRACE
+        value: "10080"
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_SSLMODE
+        value: require
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: poolside/laguna-s-2.1:free,nvidia/nemotron-3-ultra-550b-a55b:free,cohere/north-mini-code:free,dots-studio/dots-3-note-preview:free,google/gemma-4-31b-it:free,poolside/laguna-xs-2.1:free
+      - key: BREVO_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: CLEANUP_TOKEN
+        sync: false
+      - key: CACHE_STORE
+        value: file
+      - key: SESSION_DRIVER
+        value: file

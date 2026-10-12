@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Services\BrevoMailService;
+use App\Services\JwtService;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 use Illuminate\Validation\ValidationException;
@@ -71,23 +72,81 @@ public function login(Request $request)
         ]);
     }
 
+    $jwtService = new JwtService();
+    $token = $jwtService->generateToken([
+        'sub' => $user->id,
+        'username' => $user->username,
+        'role' => (int) $user->role,
+    ]);
+
     return response()->json([
         'status' => 'success',
         'message' => 'Login successful',
+        'token' => $token,
         'id' => $user->id,
         'email' => $user->email,
-        'username' => $user->username, // Trả về nguyên dạng đã lưu
+        'username' => $user->username,
         'role' => (int) $user->role,
         'id_admin' => $user->id_admin ?? '',
         'id_topic' => $user->id_topic ?? '',
-    ]);
+    ])->withCookie($jwtService->authCookie($request, $token));
 }
+
+    // Gia hạn token (sliding expiration):
+    // token còn hạn hoặc đã hết hạn nhưng trong cửa sổ refresh_grace
+    // → cấp token mới + cookie mới. Gửi kèm header hoặc cookie đều được.
+    public function refresh(Request $request)
+    {
+        $jwtService = new JwtService();
+        $token = $jwtService->parseToken($request);
+
+        if (!$token) {
+            return response()->json(['status' => 'error', 'message' => 'Missing token'], 401);
+        }
+
+        $decoded = $jwtService->decodeWithGrace($token);
+        if (!$decoded || !isset($decoded->sub)) {
+            return response()->json(['status' => 'error', 'message' => 'Invalid or expired token'], 401);
+        }
+
+        $user = User::find($decoded->sub);
+        if (!$user) {
+            return response()->json(['status' => 'error', 'message' => 'User not found'], 401);
+        }
+
+        $newToken = $jwtService->generateToken([
+            'sub' => $user->id,
+            'username' => $user->username,
+            'role' => (int) $user->role,
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Token refreshed',
+            'token' => $newToken,
+            'id' => $user->id,
+            'username' => $user->username,
+            'role' => (int) $user->role,
+            'id_admin' => $user->id_admin ?? '',
+            'id_topic' => $user->id_topic ?? '',
+        ])->withCookie($jwtService->authCookie($request, $newToken));
+    }
+
+    // Đăng xuất: xóa cookie JWT (httpOnly — FE không tự xóa được)
+    public function logout()
+    {
+        $jwtService = new JwtService();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Đăng xuất thành công',
+        ])->withCookie($jwtService->forgetCookie());
+    }
 
     //đổi mật khẩu
 public function changePassword(Request $request)
 {
     $request->validate([
-        'id' => 'required|exists:users,id',
         'old_password' => 'required|string',
         'password' => [
             'required',
@@ -104,7 +163,10 @@ public function changePassword(Request $request)
         'password.regex' => 'Mật khẩu không được chứa khoảng trắng'
     ]);
 
-    $user = User::findOrFail($request->id);
+    $user = $request->user;
+    if (!$user) {
+        return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+    }
 
     if (! Hash::check($request->old_password, $user->password)) {
         return response()->json([
@@ -224,4 +286,22 @@ public function resetPassword(Request $request)
         'message' => 'Đổi mật khẩu thành công!'
     ]);
 }
+
+    public function me(Request $request)
+    {
+        $user = $request->user;
+        if (!$user) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'id' => $user->id,
+            'username' => $user->username,
+            'email' => $user->email,
+            'role' => (int) $user->role,
+            'id_admin' => $user->id_admin ?? '',
+            'id_topic' => $user->id_topic ?? '',
+        ]);
+    }
 }

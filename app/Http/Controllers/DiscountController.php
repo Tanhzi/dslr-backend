@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Discount;
 use App\Models\Pay;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Validator;
@@ -130,6 +131,11 @@ class DiscountController extends Controller
 
             DB::commit();
 
+            // Hết hạn ngay cache báo cáo/doanh thu của máy này (không chờ TTL)
+            Cache::increment('revenue_ver_' . $pay->id_admin);
+            Cache::increment('report_ver_' . $pay->id_admin);
+            Cache::increment('report_ver_all');
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Tạo pays thành công',
@@ -173,6 +179,13 @@ class DiscountController extends Controller
             return response()->json(['error' => 'Không tìm thấy thanh toán'], 404);
         }
 
+        // Chỉ Admin được sửa đơn của bất kỳ máy nào;
+        // customer/staff chỉ được sửa đơn thuộc đúng id_admin của mình
+        $user = $request->user();
+        if ($user && (int) $user->role !== 2 && (int) $pay->id_admin !== (int) $user->id_admin) {
+            return response()->json(['error' => 'Bạn không có quyền cập nhật thanh toán này'], 403);
+        }
+
         $pay->update([
             'id_frame' => $request->id_frame,
             'id_qr' => $request->id_qr,
@@ -184,15 +197,16 @@ class DiscountController extends Controller
 
 public function index1(Request $request)
 {
-    $adminId = $request->query('admin_id');
+    // Ưu tiên lấy từ JWT token (middleware gán vào request), fallback về query param
+    $adminId = $request->id_admin ?? $request->query('admin_id');
 
     if (!$adminId) {
-        return response()->json(['error' => 'Thiếu admin_id'], 400);
+        return response()->json(['error' => 'Thiếu id_admin'], 400);
     }
 
     $discounts = Discount::where('id_admin', $adminId)
         ->select('id', 'code', 'value', 'quantity', 'count_quantity', 'startdate', 'enddate')
-        ->orderBy('startdate', 'asc') // Sắp xếp theo ngày bắt đầu tăng dần
+        ->orderBy('startdate', 'asc')
         ->get();
 
     return response()->json($discounts);

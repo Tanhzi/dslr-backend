@@ -37,7 +37,7 @@ foreach ($oldMedia as $media) {
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $supabaseKey,
                 'apikey' => $supabaseKey,
-            ])->delete($deleteUrl);
+            ])->timeout(5)->delete($deleteUrl);
 
             if ($response->failed()) {
                 Log::warning("Supabase delete failed for media ID {$media->id}", [
@@ -54,9 +54,10 @@ foreach ($oldMedia as $media) {
     }
 
     // 2. NẾU LÀ QR, XÓA id_qr TRONG BẢNG pays
-    if ($media->file_type === 'qr' && !empty($media->session_id)) {
+    // (cột trong bảng media là id_qr — không có session_id)
+    if ($media->file_type === 'qr' && !empty($media->id_qr)) {
         try {
-            \App\Models\Pay::where('id_qr', $media->session_id)->update(['id_qr' => null]);
+            \App\Models\Pay::where('id_qr', $media->id_qr)->update(['id_qr' => null]);
         } catch (\Exception $e) {
             Log::error("Failed to clear id_qr in pays for session_id {$media->session_id}", [
                 'media_id' => $media->id,
