@@ -19,7 +19,7 @@ WORKDIR /var/www
 COPY . .
 
 # Cài dependencies
-RUN composer install --no-dev --optimize-autoloader
+RUN APP_ENV=local composer install --no-dev --optimize-autoloader
 
 # Tạo thư mục cần thiết
 RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views
