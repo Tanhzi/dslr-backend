@@ -81,14 +81,18 @@ class JwtService
     public function authCookie(Request $request, string $token): Cookie
     {
         $cfg = config('jwt.cookie', []);
+        $sameSite = strtolower($cfg['same_site'] ?? 'lax');
 
+        // SameSite=None BẮT BUỘC kèm attr Secure, nếu không trình duyệt
+        // sẽ TỪ CHỐI cookie. Secure vẫn OK trên http://localhost
+        // (localhost là secure context); request HTTPS thật thì đã secure sẵn.
         return cookie(
             name: $cfg['name'] ?? 'sweetlens_token',
             value: $token,
             minutes: $this->ttl,
             path: $cfg['path'] ?? '/',
             domain: $cfg['domain'] ?? null,
-            secure: $request->secure(),
+            secure: $request->secure() || $sameSite === 'none',
             httpOnly: true,
             raw: false,
             sameSite: $cfg['same_site'] ?? 'lax',

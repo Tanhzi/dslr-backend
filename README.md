@@ -3,12 +3,13 @@
 [![Laravel](https://img.shields.io/badge/Laravel-12-FF2D20?logo=laravel&logoColor=white)](https://laravel.com/)
 [![PHP](https://img.shields.io/badge/PHP-%E2%89%A58.2-777BB4?logo=php&logoColor=white)](https://www.php.net/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-14%20passing-2E7D32.svg)](#kiểm-thử)
+[![Tests](https://img.shields.io/badge/tests-26%20passing-2E7D32.svg)](#kiểm-thử)
 [![License](https://img.shields.io/badge/license-proprietary-C0392B.svg)](#giấy-phép)
 
 REST API cho hệ thống Photo Booth **SweetLens** — xác thực JWT, quản lý dữ liệu, thanh toán, báo cáo doanh thu, in/email và chatbot AI.
 
-> Repo này chỉ chứa **backend**. Frontend (React) nằm trong repo riêng.
+> Repo này chỉ chứa **backend**: [github.com/Tanhzi/dslr-backend](https://github.com/Tanhzi/dslr-backend).
+> Frontend (React) nằm trong repo riêng: [github.com/Tanhzi/Photobooth](https://github.com/Tanhzi/Photobooth).
 
 ---
 
@@ -27,15 +28,14 @@ REST API cho hệ thống Photo Booth **SweetLens** — xác thực JWT, quản 
 - [Caching](#caching)
 - [Lên lịch & dọn dẹp media](#lên-lịch--dọn-dẹp-media)
 - [Kiểm thử](#kiểm-thử)
-- [Triển khai](#triển-khai)
 - [Giấy phép](#giấy-phép)
 
 ---
 
 ## Tổng quan
 
-- **89 routes** (21 API công khai + 63 route JWT + web cơ bản), **21 controllers**, **15 migrations**.
-- Xác thực **JWT HS256, TTL 24h** — middleware tự lấy user từ DB và inject `id_admin`/`id_topic` vào request.
+- **90 routes** (23 API công khai + 63 route JWT + 4 route web/health), **20 controllers**, **16 migrations**.
+- Xác thực **JWT HS256, TTL 60 phút** (`JWT_TTL`) — middleware tự lấy user từ DB và inject `id_admin`/`id_topic` vào request.
 - Lưu file (khung/sticker/media) trên **Supabase Storage**; email qua **Brevo API**; chatbot qua **OpenRouter** (chain model free).
 - Thống kê dashboard/doanh thu **cache file** có version-key để invalidate chủ động khi có đơn mới.
 
@@ -78,8 +78,8 @@ REST API cho hệ thống Photo Booth **SweetLens** — xác thực JWT, quản 
 ## Cài đặt nhanh
 
 ```bash
-git clone <repo-backend-url>
-cd backend
+git clone https://github.com/Tanhzi/dslr-backend.git
+cd dslr-backend
 
 composer setup      # install + copy .env + key:generate + migrate
 composer dev        # serve + queue + pail logs + vite (đồng thời)
@@ -104,7 +104,7 @@ php artisan serve --host=0.0.0.0 --port=8000
 | `composer dev` | Chạy song song serve + queue + pail + vite |
 | `composer test` | Xóa cache config + chạy toàn bộ PHPUnit |
 | `composer lint` | Kiểm tra syntax `php -l` toàn bộ file PHP (bỏ qua `vendor/`) |
-| `php artisan route:list` | Liệt kê 89 routes |
+| `php artisan route:list` | Liệt kê 90 routes |
 | `php artisan schedule:list` | Xem các lệnh theo lịch |
 
 ## Cấu hình môi trường
@@ -114,8 +114,9 @@ Tạo `.env` từ `.env.example` (file mẫu **không chứa secret**):
 | Biến | Mô tả |
 |---|---|
 | `APP_URL` | URL của backend (mặc định `http://127.0.0.1:8000`) |
+| `APP_KEY` | Khóa mã hóa — sinh bằng `php artisan key:generate` |
 | `APP_DEBUG` | **`false` trên production** — `true` lộ stack trace |
-| `DB_*` | Kết nối PostgreSQL (Supabase) |
+| `DB_*` | Kết nối PostgreSQL (Supabase), kèm `DB_SSLMODE` (mặc định `require`) |
 | `SUPABASE_URL` / `SUPABASE_KEY` | Supabase Storage |
 | `JWT_SECRET` | Khóa bí mật ký JWT (HS256) |
 | `JWT_TTL` | TTL access token (phút, mặc định **60**) |
@@ -154,6 +155,7 @@ Tạo `.env` từ `.env.example` (file mẫu **không chứa secret**):
 | GET | `/api/media/session` | Ảnh theo phiên chụp |
 | GET | `/api/get-composite-by-session` | Ảnh ghép khung theo phiên |
 | GET | `/api/qr-image`, `/api/download` | Ảnh QR / tải ảnh |
+| GET | `/download` | Trang HTML tải ảnh (route web, ngoài `/api`) |
 | GET | `/api/cleanup-trigger` | Dọn media (yêu cầu `?token=` khớp `CLEANUP_TOKEN`) |
 
 ### 2. Yêu cầu JWT (tự phục vụ — mọi role)
@@ -211,13 +213,17 @@ backend/
 │   ├── Models/
 │   └── Services/                 # JwtService, BrevoMailService...
 ├── config/
-│   ├── jwt.php
+│   ├── jwt.php                   # TTL/grace/cookie + fail-fast JWT_SECRET
+│   ├── cors.php                  # whitelist CORS_ORIGINS
 │   └── services.php              # openrouter (chain model free)
-├── database/migrations/          # 15 migrations
-├── routes/api.php                # 89 routes
+├── database/migrations/          # 16 migrations
+├── routes/
+│   ├── api.php                   # 86 API routes (63 JWT + 23 công khai)
+│   └── web.php                   # Health JSON (`/`), trang download (`/download`)
 ├── scripts/lint.php              # php -l toàn bộ (composer lint)
 └── tests/
     ├── Feature/ApiSecurityTest.php   # 401/403/404/422
+    ├── Feature/AuthCookieTest.php    # Cookie httpOnly, refresh, CSRF Origin
     └── Unit/EnsureRoleTest.php       # role 0/1/2
 ```
 
@@ -231,8 +237,6 @@ backend/
 4. **Gia hạn sliding:** hết hạn → FE gọi `POST /api/refresh` (cookie/header) — token còn hạn hoặc hết hạn trong **7 ngày grace** sẽ được cấp mới; ngoài cửa sổ → 401 → đăng xuất.
 5. **Chống CSRF:** request xác thực bằng cookie + phương thức ghi (POST/PUT/PATCH/DELETE) bắt buộc `Origin` nằm trong `CORS_ORIGINS` (request không có Origin — curl/server-to-server — được cho qua). Request có header `Authorization` không bị chặn Origin.
 6. **Phân quyền** `EnsureRole`: **0 = khách**, **1 = staff**, **2 = admin** — vi phạm trả **403**; thiếu/sai token trả **401**.
-
-> **Production (FE Vercel → BE Render, gọi thẳng cross-site):** đặt `JWT_COOKIE_SAMESITE=None` (HTTPS bắt buộc) — hoặc dùng Vercel rewrites để cùng domain thì giữ `lax`. Luôn whitelist domain Vercel trong `CORS_ORIGINS`.
 
 Middleware `jwt` và `role` được đăng ký trong `bootstrap/app.php` (alias `jwt`, `role`).
 
@@ -254,63 +258,15 @@ Middleware `jwt` và `role` được đăng ký trong `bootstrap/app.php` (alias
 ## Kiểm thử
 
 ```bash
-composer test    # PHPUnit — 25 test / 37 assertions
+composer test    # PHPUnit — 26 test / 42 assertions
 composer lint    # php -l toàn bộ file PHP (79 file)
 ```
 
 | Bộ test | Nội dung |
 |---|---|
 | `tests/Feature/ApiSecurityTest.php` | 401 thiếu token (`/api/chat`, `/api/events`, `/api/summary`), token rác, 422 validate login/register, 404 |
-| `tests/Feature/AuthCookieTest.php` | Cookie httpOnly đăng nhập/xác thực, refresh trong & ngoài grace, logout, chặn CSRF theo Origin |
+| `tests/Feature/AuthCookieTest.php` | Cookie httpOnly đăng nhập/xác thực (kèm `None`+`Secure`), refresh trong & ngoài grace, logout, chặn CSRF theo Origin |
 | `tests/Unit/EnsureRoleTest.php` | role 0 → 200, role 1 → 403 (route admin), không token → 401 |
-
-## Triển khai
-
-**Render (Web Service, PHP native hoặc Docker):**
-
-- **Build command:**
-  ```bash
-  composer install --no-dev --optimize-autoloader && php artisan migrate --force
-  ```
-- **Start command** (khuyến nghị — tăng giới hạn upload ảnh & timeout):
-  ```bash
-  php -d upload_max_filesize=64M -d post_max_size=128M -d max_execution_time=120 -S 0.0.0.0:$PORT -t public public/index.php
-  ```
-  (Cách đơn giản hơn: `php artisan serve --host=0.0.0.0 --port=$PORT` — nhưng bị giới hạn upload mặc định 2M/8M của PHP.)
-- **Health check:** đường dẫn `/up` (Laravel mặc định), `GET /` trả JSON trạng thái.
-- **Docker:** `Dockerfile` đã tôn trọng `$PORT` của Render + giới hạn upload — thêm `.dockerignore` (giữ `.env` khỏi image).
-
-**Env bắt buộc trên Render:**
-
-| Env | Giá trị |
-|---|---|
-| `APP_ENV` / `APP_DEBUG` | `production` / **`false`** |
-| `APP_URL` | `https://<service>.onrender.com` |
-| `APP_KEY` | `base64:...` (chạy `php artisan key:generate --show` ở máy khác hoặc tạo key) |
-| `JWT_SECRET` | key ngẫu nhiên ≥32 ký tự — **thiếu là app từ chối khởi động** (fail-fast) |
-| `DB_*` / `DATABASE_URL` | PostgreSQL (Supabase) — `sslmode=require` mặc định |
-| `SUPABASE_URL` / `SUPABASE_KEY` | Storage |
-| `OPENROUTER_API_KEY` / `BREVO_API_KEY` | Chatbot / email |
-| `CORS_ORIGINS` | `https://<fe>.vercel.app,http://localhost:5173` |
-| `JWT_COOKIE_SAMESITE` | `None` (FE gọi thẳng cross-site — HTTPS bắt buộc) |
-| `CLEANUP_TOKEN` | token ngẫu nhiên cho cron dọn media |
-| `CACHE_STORE` / `SESSION_DRIVER` | `file` / `database` |
-
-**Lên lịch & cron:**
-
-- Schedule `media:cleanup` lúc 03:00 → cần cron `* * * * * php artisan schedule:run`.
-- **Render free plan không có cron** → dùng cron ngoài (cron-job.org...) gọi định kỳ:
-  `GET https://<service>.onrender.com/api/cleanup-trigger?token=<CLEANUP_TOKEN>`
-
-**Checklist sau deploy:**
-
-- [ ] `GET /` trả JSON `{"status":"ok"}` (không 500)
-- [ ] `GET /up` → 200
-- [ ] `POST /api/login` thành công + set cookie `sweetlens_token`
-- [ ] `GET /api/summary` có token → 200, thiếu token → 401
-- [ ] Gửi email test (`/api/send-qr-email`)
-- [ ] `APP_DEBUG=false` — response lỗi 5xx không lộ chi tiết nội bộ
-- [ ] Cron cleanup gọi được (log `storage/logs` có bản ghi 03:00 hoặc cron ngoài 200)
 
 ## Giấy phép
 

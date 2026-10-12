@@ -166,4 +166,25 @@ class AuthCookieTest extends TestCase
             ->postJson('/api/discounts/use', [], ['Origin' => 'http://evil.example'])
             ->assertStatus(422);
     }
+
+    public function test_login_cookie_is_secure_when_samesite_none(): void
+    {
+        // Cross-site (FE Vercel -> BE Render) dat SameSite=None;
+        // browser tu choi cookie None neu thieu attr Secure.
+        config(['jwt.cookie.same_site' => 'none']);
+        $this->makeUser();
+
+        $response = $this->postJson('/api/login', [
+            'username' => 'cookieuser',
+            'password' => 'secret123',
+        ]);
+
+        $response->assertStatus(200)->assertCookie('sweetlens_token');
+
+        // $decrypt = false: chi can attribute Secure/SameSite (khong doc gia tri).
+        $cookie = $response->getCookie('sweetlens_token', false);
+        $this->assertNotNull($cookie, 'Cookie phai ton tai');
+        $this->assertTrue($cookie->isSecure(), 'SameSite=None bat buoc cookie Secure');
+        $this->assertSame('none', $cookie->getSameSite());
+    }
 }
