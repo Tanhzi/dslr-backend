@@ -26,8 +26,6 @@ REST API cho hệ thống Photo Booth **SweetLens** — xác thực JWT, quản 
 - [Cấu trúc thư mục](#cấu-trúc-thư-mục)
 - [Xác thực & phân quyền](#xác-thực--phân-quyền)
 - [Caching](#caching)
-- [Lên lịch & dọn dẹp media](#lên-lịch--dọn-dẹp-media)
-- [Kiểm thử](#kiểm-thử)
 - [Giấy phép](#giấy-phép)
 
 ---
@@ -67,7 +65,6 @@ REST API cho hệ thống Photo Booth **SweetLens** — xác thực JWT, quản 
 | Supabase Storage | — | Lưu file (bucket `event-assets`) |
 | firebase/php-jwt | ^7.0 | JWT HS256 |
 | guzzlehttp/guzzle | ^7.10 | Gọi Supabase/Brevo/OpenRouter |
-| doctrine/dbal | ^4.3 | Abstraction DB |
 
 ## Yêu cầu hệ thống
 
@@ -91,7 +88,6 @@ Cách thủ công:
 composer install
 cp .env.example .env
 php artisan key:generate
-# điền DB_*, SUPABASE_*, JWT_SECRET, OPENROUTER_API_KEY, BREVO_API_KEY vào .env
 php artisan migrate
 php artisan serve --host=0.0.0.0 --port=8000
 ```
@@ -108,8 +104,6 @@ php artisan serve --host=0.0.0.0 --port=8000
 | `php artisan schedule:list` | Xem các lệnh theo lịch |
 
 ## Cấu hình môi trường
-
-Tạo `.env` từ `.env.example` (file mẫu **không chứa secret**):
 
 | Biến | Mô tả |
 |---|---|
@@ -197,7 +191,6 @@ Tạo `.env` từ `.env.example` (file mẫu **không chứa secret**):
 | POST | `/api/send-qr-email`, `/api/send-original-images-email` | Email — throttle **10 req/phút** |
 | DELETE | `/api/ratings/{id}` | Xóa đánh giá |
 
-> Vi phạm phân quyền trả **403**; thiếu/sai token trả **401**; lỗi validate trả **422** kèm `errors` theo từng field.
 
 ## Cấu trúc thư mục
 
@@ -238,7 +231,6 @@ backend/
 5. **Chống CSRF:** request xác thực bằng cookie + phương thức ghi (POST/PUT/PATCH/DELETE) bắt buộc `Origin` nằm trong `CORS_ORIGINS` (request không có Origin — curl/server-to-server — được cho qua). Request có header `Authorization` không bị chặn Origin.
 6. **Phân quyền** `EnsureRole`: **0 = khách**, **1 = staff**, **2 = admin** — vi phạm trả **403**; thiếu/sai token trả **401**.
 
-Middleware `jwt` và `role` được đăng ký trong `bootstrap/app.php` (alias `jwt`, `role`).
 
 ## Caching
 
@@ -249,24 +241,6 @@ Middleware `jwt` và `role` được đăng ký trong `bootstrap/app.php` (alias
 - **Chatbot:** TTL 10 phút theo `id_admin`.
 - **Invalidation chủ động:** `POST /api/pays` tăng `revenue_ver_{id_admin}` / `report_ver_{id_admin}` / `report_ver_all` → báo cáo cập nhật ngay, không chờ TTL.
 
-## Lên lịch & dọn dẹp media
-
-- Chạy scheduler: cron mỗi phút `php artisan schedule:run` → dọn media rác lúc **03:00 hằng ngày**.
-- Cron ngoài (không chạy artisan được): `GET /api/cleanup-trigger?token={CLEANUP_TOKEN}`.
-- Production: đặt `CLEANUP_TOKEN` giá trị ngẫu nhiên dài; **không** public endpoint này mà thiếu token.
-
-## Kiểm thử
-
-```bash
-composer test    # PHPUnit — 26 test / 42 assertions
-composer lint    # php -l toàn bộ file PHP (79 file)
-```
-
-| Bộ test | Nội dung |
-|---|---|
-| `tests/Feature/ApiSecurityTest.php` | 401 thiếu token (`/api/chat`, `/api/events`, `/api/summary`), token rác, 422 validate login/register, 404 |
-| `tests/Feature/AuthCookieTest.php` | Cookie httpOnly đăng nhập/xác thực (kèm `None`+`Secure`), refresh trong & ngoài grace, logout, chặn CSRF theo Origin |
-| `tests/Unit/EnsureRoleTest.php` | role 0 → 200, role 1 → 403 (route admin), không token → 401 |
 
 ## Giấy phép
 
